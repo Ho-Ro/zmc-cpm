@@ -51,3 +51,15 @@ Ejecutar: bash make.sh
 
 (c) 2026 - Proyecto Abierto para la Comunidad CP/M y VCFed.
 ======================================================================
+
+
+6. INSPIRACION Y CREDITOS
+-------------------------
+ZMC es un homenaje al legendario Norton Commander. 
+Quiero dedicar una mención especial a Peter Norton, cuyo ingenio en el diseño 
+inspiró a generaciones de desarrolladores a lograr una gestión de archivos 
+eficiente e intuitiva. 
+Este proyecto aporta esa esencia clásica al ecosistema Z80 CP/M
+
+
+License: This project is licensed under the GPLv3 License - see the LICENSE file for details
