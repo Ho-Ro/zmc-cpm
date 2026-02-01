@@ -3,16 +3,17 @@
 
 AppState App;
 
-unsigned char wait_key_hw(void) {
-    #asm
-    loophw_zmc:
-        in a, (025h)
-        and 01h
-        jr z, loophw_zmc
-        in a, (020h)
-        ld l, a
-        ld h, 0
-    #endasm
+unsigned char wait_key_hw() {
+#asm
+loop_bdos_kbd:
+    ld c, 06h    ; Función 6: Direct I/O
+    ld e, 0FFh   ; Modo entrada
+    call 0005h   ; Llamada al BDOS
+    or a         ; ¿Hay tecla?
+    jr z, loop_bdos_kbd
+    ld l, a      ; Retornar tecla en HL
+    ld h, 0
+#endasm
 }
 
 void refresh_ui() {
@@ -73,17 +74,31 @@ int main() {
         // 3. Ctrl+X: Salir
         if (k == 24) break;
 	/* MODIFICACIÓN PARCIAL en el while(1) de main.c */
-	if (k == ' ') { // Barra espaciadora
-	    int idx = App.active_panel->current_idx;
-	    App.active_panel->files[idx].seleccionado = !App.active_panel->files[idx].seleccionado;
-	    
-	    // Mover cursor abajo automáticamente al marcar (estilo Norton)
-	    if (idx < App.active_panel->num_files - 1) {
-	        App.active_panel->current_idx++;
-	    }
-	    refresh_ui();
-	    continue;
-	}
+	// 1. Selección con Espacio (Cierre de ciclo de refresco)
+        if (k == ' ') { 
+            int idx = App.active_panel->current_idx;
+            int offset = (App.active_panel == &App.left) ? 1 : 41;
+            
+            // A. Invertir el estado de selección en la memoria
+            App.active_panel->files[idx].seleccionado = !App.active_panel->files[idx].seleccionado;
+            
+            // B. REDIBUJAR el renglón actual inmediatamente para mostrar el '*' [cite: 2026-01-31]
+            // IMPORTANTE: Todavía no hemos movido el current_idx, así que se dibuja con el cursor.
+            draw_file_line(App.active_panel, offset, idx);
+
+            // C. AVANZAR el cursor al siguiente renglón [cite: 2026-01-31]
+            if (App.active_panel->current_idx < App.active_panel->num_files - 1) {
+                int old_idx = App.active_panel->current_idx;
+                App.active_panel->current_idx++;
+                
+                // D. REDIBUJAR el renglón anterior (para que pierda el cursor pero mantenga el '*') [cite: 2026-01-31]
+                draw_file_line(App.active_panel, offset, old_idx);
+                
+                // E. REDIBUJAR el nuevo renglón (para que gane el cursor) [cite: 2026-01-31]
+                draw_file_line(App.active_panel, offset, App.active_panel->current_idx);
+            }
+            continue;
+        }
 
         // 4. Secuencias de Escape (Flechas y Teclas de Función)
         if (k == 27) {
@@ -137,26 +152,38 @@ int main() {
 		                App.active_panel->current_idx = App.active_panel->num_files - 1;
 		            refresh_ui();
 		            break;
-                    case '1': // F5 (16~), F6 (17~), F8 (19~)
+                    case '1': // F5 (15~) y F8 (19~)
                         k = wait_key_hw();
-                        if (k == '6') { // F5 Detectado segun SNIFFER
+                        
+                        if (k == '5') { // F5 Detectado
                             wait_key_hw(); // Consumir ~
                             Panel *dest = (App.active_panel == &App.left) ? &App.right : &App.left;
-                            printf("\x1b[31;1H\x1b[42;37m COPIAR A %c:? (S/N) \x1b[0m", dest->drive);
+                            
+                            // Limpiar línea de diálogo y preguntar
+                            printf("\x1b[31;1H\x1b[K COPIAR A %c:? (S/N) ", dest->drive);
+                            
                             k = wait_key_hw();
                             if (k == 's' || k == 'S') {
-                                copiar_archivo(App.active_panel, dest);
-                                load_directory(dest);
+                                // Ahora sí: Copia múltiple habilitada
+                                ejecutar_copia_multiple(App.active_panel, dest);
                             }
-                        } else if (k == '9') { // F8 Detectado
+                            // Limpiar rastro al terminar
+                            printf("\x1b[31;1H\x1b[K"); 
+                        } 
+                        else if (k == '9') { // F8 Detectado
                             wait_key_hw(); // Consumir ~
-                            printf("\x1b[31;1H\x1b[41;37m BORRAR: %s? (S/N) \x1b[0m",
-                                   App.active_panel->files[App.active_panel->current_idx].name);
+                            
+                            // Limpiar línea de diálogo y preguntar
+                            printf("\x1b[31;1H\x1b[K BORRAR SELECCIONADOS? (S/N) ");
+                            
                             k = wait_key_hw();
                             if (k == 's' || k == 'S') {
-                                borrar_archivo(App.active_panel);
+                                // Llamamos a la nueva función maestra [cite: 2026-01-31]
+                                ejecutar_borrado_multiple(App.active_panel);
                                 load_directory(App.active_panel);
                             }
+                            // Limpiar rastro al terminar
+                            printf("\x1b[31;1H\x1b[K");
                         }
                         refresh_ui();
                         break;

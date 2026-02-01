@@ -310,7 +310,7 @@ void ejecutar_copia_multiple(Panel *src, Panel *dst) {
     }
 
     if (marcados == 0) {
-        printf("\x1b[31;1H\x1b[42;37m Copiando: %s... \x1b[0m", src->files[src->current_idx].name);
+        printf("\x1b[31;1H\x1b[0;37m Copiando: %s... \x1b[0m", src->files[src->current_idx].name);
         copiar_archivo_por_indice(src, dst, src->current_idx);
     } else {
         for (i = 0; i < src->num_files; i++) {
@@ -328,4 +328,48 @@ void ejecutar_copia_multiple(Panel *src, Panel *dst) {
     load_directory(dst);
     // Quitamos refresh_ui() de aquí porque operaciones.c no la conoce.
     // El refresh lo hará el main.c después de llamar a esta función.
+}
+/* Función Maestra de Borrado en operaciones.c */
+void ejecutar_borrado_multiple(Panel *p) {
+    int i, marcados = 0, procesados = 0;
+    unsigned char fcb[36];
+
+    // Contar cuántos hay marcados
+    for (i = 0; i < p->num_files; i++) {
+        if (p->files[i].seleccionado) marcados++;
+    }
+
+    if (marcados == 0) {
+        // Si no hay marcados, borramos solo el actual (funcionalidad original) [cite: 2026-01-28]
+        printf("\x1b[31;1H\x1b[K Borrando: %s... ", p->files[p->current_idx].name);
+        borrar_archivo(p);
+    } else {
+        // Borrado en lote [cite: 2026-01-31]
+        for (i = 0; i < p->num_files; i++) {
+            if (p->files[i].seleccionado) {
+                procesados++;
+                printf("\x1b[31;1H\x1b[K [%d/%d] Borrando: %s ", 
+                       procesados, marcados, p->files[i].name);
+                
+                /* Preparamos el FCB para el archivo i */
+                memset(fcb, 0, sizeof(fcb));
+                fcb[0] = (p->drive - 'A') + 1;
+                memset(&fcb[1], ' ', 11);
+                
+                char *name_ptr = p->files[i].name;
+                int j;
+                for(j = 0; j < 8 && name_ptr[j] != '.' && name_ptr[j] != '\0'; j++) fcb[1+j] = name_ptr[j];
+                while(*name_ptr && *name_ptr != '.') name_ptr++;
+                if(*name_ptr == '.') {
+                    name_ptr++;
+                    for(j = 0; j < 3 && name_ptr[j] != '\0'; j++) fcb[9+j] = name_ptr[j];
+                }
+
+                bdos(19, fcb); // Función 19: Borrar
+                p->files[i].seleccionado = 0; 
+            }
+        }
+    }
+    // Limpiamos rastro del diálogo
+    printf("\x1b[31;1H\x1b[K");
 }
