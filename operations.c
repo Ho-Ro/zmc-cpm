@@ -451,7 +451,7 @@ static void exec_multi_copy( Panel *src, Panel *dst ) {
         // clear dialog box and ask
         gotoxy( STATUS_ROW << 8 | 1 );
         ereol();
-        printf( " COPY SELECTED FILE(S) TO %c:? (Y/N) ", dst->drive );
+        printf( " COPY SELECTED FILE(S) TO %c:? (N/y) ", dst->drive );
         if ( !yes_no() )
             return;
 
@@ -492,7 +492,7 @@ static void exec_multi_delete( Panel *p ) {
     // clear dialog box and ask
     gotoxy( STATUS_ROW << 8 | 1 );
     ereol();
-    printf( " DELETE SELECTED FILE(S)? (Y/N) " );
+    printf( " DELETE SELECTED FILE(S)? (N/y) " );
     if ( !yes_no() )
         return;
     // count number of selections

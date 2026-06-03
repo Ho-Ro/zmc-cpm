@@ -53,7 +53,9 @@ EXTERN      _cpbufpt
 EXTERN      _cpbufsz
 
 DEFC    sfcbcr  = _fcb_src+32   ;current read record
+DEFC    sfcbce  = _fcb_src+12   ;current read extend
 DEFC    dfcbcr  = _fcb_dst+32   ;current write record
+DEFC    dfcbce  = _fcb_dst+12   ;current write extend
 
 _status: DEFB    0
 
@@ -82,10 +84,12 @@ _cpsrcdst:
     inc     a
     jp      z,exit
 
-;   zero the current records
+;   zero the current records/extends
     xor     a
     ld      (sfcbcr),a
+    ld      (sfcbce),a
     ld      (dfcbcr),a
+    ld      (dfcbce),a
     ld      (endof),a       ;we're not at the end of file
 
 ifdef  USE_CPM3_MULTI_SECTOR
