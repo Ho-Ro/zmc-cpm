@@ -166,8 +166,8 @@ void last_file( void );
 
 // operations.c
 void load_directory( Panel *p );
-void view_file();
-void dump_file();
+void view_file( void );
+void dump_file(void );
 void copy_cmd( void );
 void delete_cmd( void );
 void change_drive( char k );

@@ -118,6 +118,9 @@ void help() {
     printf( "[F10], [ESC]0, [ESC][ESC], QUIT, EXIT" );
     gotoxy( ( line++ ) << 8 | helppos );
     puts( "Exit" );
+    printf( "^C, CTRLC, RESET" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Reset Disk System (^C)" );
     wait_key_hw();
     refresh_ui( PAN_BOTH );
 }
@@ -141,6 +144,31 @@ command_func_t find_command( const char *input, command_t commands[], int num_co
 }
 
 
+static void init_ui() {
+    cls();
+    curoff();
+
+    draw_frame( &App.left );
+    draw_header( &App.left );
+    load_directory( &App.left );
+    fill_panel( &App.left );
+
+    draw_frame( &App.right );
+    draw_header( &App.right );
+    load_directory( &App.right );
+    fill_panel( &App.right );
+
+    draw_footer();
+    show_prompt();
+}
+
+
+static void reset() {
+    bdos( 13, NULL ); // reset disk system
+    init_ui();
+}
+
+
 // list of text commands from prompt line and called function
 const command_t commands[] = {
     { "HELP", help },
@@ -150,6 +178,7 @@ const command_t commands[] = {
     { "DEL", delete_cmd }, { "ERA", delete_cmd },  { "RM", delete_cmd },
     { "TOP", first_file }, { "POS1", first_file },
     { "BOT", last_file },  { "END", last_file },
+    { "^C", reset }, { "CTRLC", reset }, { "RESET", reset }
 };
 
 
@@ -352,21 +381,7 @@ int main( int argc, char **argv ) {
         VLIB_STATUS = gz3init( *envptr );
     }
 
-    cls();
-    curoff();
-
-    draw_frame( &App.left );
-    draw_header( &App.left );
-    load_directory( &App.left );
-    fill_panel( &App.left );
-
-    draw_frame( &App.right );
-    draw_header( &App.right );
-    load_directory( &App.right );
-    fill_panel( &App.right );
-
-    draw_footer();
-    show_prompt();
+    init_ui();
 
     uint8_t loop = 1;
     uint8_t k;
