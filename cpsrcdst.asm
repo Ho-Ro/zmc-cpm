@@ -207,7 +207,10 @@ copy_done:
     call    BDOS            ;255 if error
     ld      (_status),a
     inc     a
-    jr      z,exit
+    jr      z,exit          ;error
+                            ;A=0,1,2,3: ok
+    xor     a               ;A!=0 can be error on some systems
+    ld      (_status),a
 
     ld      de,_fcb_src     ;source close
     ld      c,CPM_CLS
