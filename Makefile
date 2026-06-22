@@ -6,6 +6,8 @@ ZMC = zmc.com
 TCAP = vt100.z3t vt100_ul.z3t adm-3a.z3t heath19.z3t
 ENV = vt100.env vt100_ul.env adm-3a.env heath19.env
 
+TEST = keytest.com bioskeyt.com
+
 ZCC := $(shell command -v zcc 2>/dev/null)
 ifndef ZCC
 ZCC := docker run --rm -v $(CURDIR):/src -w /src z88dk/z88dk zcc
@@ -14,6 +16,8 @@ endif
 .PHONY: all
 all: $(ZMC) $(TCAP) $(ENV)
 
+.PHONY: test
+test: $(TEST)
 
 # ZMC build is using:
 #  The sccz80 assembler (defaults to __smallc linkage)
@@ -61,7 +65,16 @@ vt100.env: sysenv.bin vt100.z3t
 vt100_ul.env: sysenv.bin vt100_ul.z3t
 	cat $^ > $@
 
+# keyboard test files
+
+keytest.com: keytest.c Makefile
+	zcc +cpm -O3 -vn -DAMALLOC -pragma-define:CRT_STACK_SIZE=1024 -Wall \
+	keytest.c -o keytest.com -create-app
+
+bioskeyt.com: bioskeyt.asm Makefile
+	zasm -b $< -o $@
+
 
 .PHONY: clean
 clean:
-	rm -f $(ZMC) $(ENV) $(TCP) *.map *.lis
+	rm -f $(ZMC) $(ENV) $(TCP) $(TEST) *.map *.lis
