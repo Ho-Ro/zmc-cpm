@@ -3,21 +3,17 @@ ENVSRC = sysenv.asm vt100.asm
 CRT = z3_crt0.asm
 HEADER = zmc.h internal_env.h vlib.h
 ZMC = zmc.com
+ZMC3 = zmc3.com
 TCAP = vt100.z3t vt100_ul.z3t adm-3a.z3t heath19.z3t
 ENV = vt100.env vt100_ul.env adm-3a.env heath19.env
 
 TEST = keytest.com bioskeyt.com
 
-ZCC := $(shell command -v zcc 2>/dev/null)
-ifndef ZCC
-ZCC := docker run --rm -v $(CURDIR):/src -w /src z88dk/z88dk zcc
-endif
+ZCC = zcc
+ZASM = zasm
 
 .PHONY: all
-all: $(ZMC) $(TCAP) $(ENV)
-
-.PHONY: test
-test: $(TEST)
+all: $(ZMC) $(ZMC3) $(TEST) $(TCAP) $(ENV)
 
 # ZMC build is using:
 #  The sccz80 assembler (defaults to __smallc linkage)
@@ -26,31 +22,45 @@ test: $(TEST)
 
 
 # the complete build is more compact (~ -500 byte) than the modular build
-$(ZMC): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT)
+$(ZMC): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
 	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall \
 	-pragma-output:noprotectmsdos \
-	-pragma-output:noredir \
-	-DAMALLOC -pragma-define:CRT_STACK_SIZE=512 \
+	-pragma-output:noredir -DAMALLOC \
+	-pragma-define:CRT_STACK_SIZE=512 \
 	$(SOURCE) -lvlib -lsyslib \
-	-o $@ -m --list
+	-m --list \
+	-o $@
+
+$(ZMC3): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
+	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall \
+	-pragma-output:noprotectmsdos \
+	-pragma-output:noredir -DAMALLOC \
+	-pragma-define:CRT_STACK_SIZE=512 \
+	-DUSE_CPM3_MULTI_SECTOR \
+	-Ca -DUSE_CPM3_MULTI_SECTOR \
+	$(SOURCE) -lvlib -lsyslib \
+	-m --list \
+	-o $@
+
 
 # the TCAP files
 adm-3a.z3t: adm-3a.asm
-	zcc +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
+	$(ZCC) +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
 
 heath19.z3t: heath19.asm
-	zcc +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
+	$(ZCC) +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
 
 vt100.z3t: vt100.asm
-	zcc +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
+	$(ZCC) +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
 
 vt100_ul.z3t: vt100_ul.asm
-	zcc +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
+	$(ZCC) +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
 
 
 # the environment file
 sysenv.bin: sysenv.asm
-	zcc +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
+	$(ZCC) +z80 -O3 --no-crt -vn -Wall $< -o $@ -m --list
+
 
 # the environment and TCAP files
 adm-3a.env: sysenv.bin adm-3a.z3t
@@ -65,16 +75,17 @@ vt100.env: sysenv.bin vt100.z3t
 vt100_ul.env: sysenv.bin vt100_ul.z3t
 	cat $^ > $@
 
+
 # keyboard test files
 
 keytest.com: keytest.c Makefile
-	zcc +cpm -O3 -vn -DAMALLOC -pragma-define:CRT_STACK_SIZE=1024 -Wall \
-	keytest.c -o keytest.com -create-app
+	$(ZCC) +cpm -O3 -vn -DAMALLOC -pragma-define:CRT_STACK_SIZE=1024 -Wall \
+	$< -o $@ -create-app
 
 bioskeyt.com: bioskeyt.asm Makefile
-	zasm -b $< -o $@
+	$(ZCC) +z80 -O3 --no-crt -vn -Wall $< -o $@
 
 
 .PHONY: clean
 clean:
-	rm -f $(ZMC) $(ENV) $(TCP) $(TEST) *.map *.lis
+	rm -f $(ZMC) $(ZMC3) $(ENV) $(TCP) $(TEST) *.map *.lis

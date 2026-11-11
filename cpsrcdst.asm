@@ -95,7 +95,7 @@ _cpsrcdst:
 ifdef  USE_CPM3_MULTI_SECTOR
 
 ;   check the CP/M version
-;   use multi sector rd/wr for CP/M 3 (currently buggy!)
+;   use multi sector rd/wr for CP/M 3
 ;   use single sector rd/wr otherwise
 ;
     ld      c,CPM_VERS
@@ -114,7 +114,7 @@ copy_loop_2:
     xor     a
     ld      hl,endof
     or      (hl)
-    jr      nz,copy_done    ;jump to end of file
+    jp      nz,copy_done    ;jump to end of file
 
 ;   zero the sector indexes
     ld      (rdsek),a
@@ -132,7 +132,7 @@ read_loop_2:
     cp      1               ;end of file?
     jr      z,endoffile_2   ;skip to fileend if so
     or      a
-    jr      nz,exit         ;error
+    jp      nz,copy_done    ;error: close files before returning
 
     ld      a,(rdsek)
     inc     a
@@ -156,6 +156,8 @@ read_loop_2:
 
 endoffile_2:
     ld      (endof),a       ;set end of file flag
+    xor     a               ;clear status -> EOF is success, not an error
+    ld      (_status),a
 
 write_start_2:
     ld      hl,rdsek        ;preincrement so we can decrement before test.
@@ -177,7 +179,7 @@ write_loop_2:
     call    BDOS            ;write record
     ld      (_status),a
     or      a               ;0 if write OK
-    jr      nz,exit         ;end if so
+    jp      nz,copy_done    ;error: close files before returning
 
     ld      a,(wrsek)
     inc     a
@@ -197,22 +199,43 @@ write_loop_2:
     add     hl,de           ;create new source dma address
     ex      de,hl
 
-    jr      write_loop_2      ;loop until buffer
+    jr      write_loop_2    ;loop until buffer
 
 
 ; common exit routines for CP/M 2.2 and CP/M 3
 copy_done:
+    ; Reset multi-sector count to 1 on CP/M 3 so subsequent single-sector
+    ; BDOS reads/writes (e.g. dump_file) don't overflow the DMA buffer.
+    ld      c,CPM_VERS
+    call    BDOS
+    cp      31h             ; CP/M 3?
+    jr      nz,copy_done_skip_ms_reset  ; no -> skip
+    ld      e,1             ; reset multi-sector count to 1
+    ld      c,CPM_MULT
+    call    BDOS
+copy_done_skip_ms_reset:
     ld      de,_fcb_dst     ;destination close
     ld      c,CPM_CLS
     call    BDOS            ;255 if error
+    ld      b,a             ;save close result
+    inc     a               ;A=1 if OK, A=0 if error
+    jr      z,dst_close_err ;dest close failed -> save error
+    ; dest close OK: keep existing _status (read/write error if any)
+    jr      src_close
+dst_close_err:
+    ld      a,b             ;restore close result (0xFF)
     ld      (_status),a
-    inc     a
-    jr      z,exit
-
+src_close:
     ld      de,_fcb_src     ;source close
     ld      c,CPM_CLS
-    call    BDOS
-
+    call    BDOS            ;255 if error
+    ld      b,a             ;save close result
+    inc     a               ;A=1 if OK, A=0 if error
+    jr      z,src_close_err ;source close failed -> save error
+    jr      exit            ;both closes OK, _status unchanged
+src_close_err:
+    ld      a,b             ;restore close result (0xFF)
+    ld      (_status),a
 exit:
     ld      de,TBUFF
     call    setdma
@@ -229,7 +252,13 @@ setdma:
 
 ifdef USE_CPM3_MULTI_SECTOR
 
-;   DO NOT USE, CAN CRASH THE SYSTEM!
+;   set multi-sector count to 1 (single sector) as fallback
+set_single:
+    ld      e,1             ;single sector count
+    ld      c,CPM_MULT
+    call    BDOS
+    ret
+
 ;   COPY LOOP for CP/M 3 (MULTI SECTOR)
 ;   source file open, dest file open
 ;   copy until end of file from source
@@ -238,7 +267,7 @@ copy_loop_3:
     xor     a
     ld      hl,endof
     or      (hl)
-    jr      nz,copy_done    ;jump to end of file
+    jp      nz,copy_done    ;jump to end of file
 
 ;   set dma address
     ld      de,(_cpbufpt)
@@ -248,27 +277,51 @@ copy_loop_3:
     ld      de,_cpbufsz
     ld      e,(de)
     call    BDOS
+    or      a               ;function 44 return code: 0=OK, 0FFH=error
+    call    nz,set_single   ;invalid count: fall back to single sector
 
     ld      de,_fcb_src     ;source
     ld      c,CPM_READ
     call    BDOS            ;read next records
     ld      (_status),a
-    cp      1               ;end of file?
-    jr      z,endoffile_3   ;skip to fileend if so
-    or      a
-    jr      nz,exit      ;error
+    cp      1               ;end of file (A=1)?
+    jr      z,endoffile_3   ;yes -> H = records read
+    or      a               ;success (A=0)?
+    jr      z,read_full_3   ;yes -> write full buffer
+    ; A=255: error or partial transfer (multi-sector count > 1)
+    ; H = records successfully read before error
+    ld      a,h             ;A = H records read
+    or      a               ;H = 0? (real error, nothing read)
+    jp      z,copy_done     ;nothing read -> real error -> close files
+    ld      e,h             ;E = H -> write partial buffer
+    ld      a,1             ;mark endof after this write
+    ld      (endof),a
+    jr      write_start_3
 
+read_full_3:
     ld      de,_cpbufsz
-    ld      e,(de)
+    ld      e,(de)          ;E = full count
     jr      write_start_3
 
 endoffile_3:
-    ld      (endof),a       ;set end of file flag
-    ld      e,h             ;number of sectors read
+    ld      (endof),a       ;set end of file flag (A=1 from cp 1)
+    ld      a,h             ;number of sectors read
+    or      a               ;test zero
+    jp      z,eof_success   ;nothing read -> normal EOF -> success
+    ld      e,h             ;E = H -> write partial buffer
+    jr      write_start_3   ;write partial block, then endof=1 exits loop
+
+;   EOF with nothing read: normal EOF -> success
+eof_success:
+    xor     a               ;clear status -> success
+    ld      (_status),a
+    jp      copy_done       ;close files
 
 write_start_3:
     ld      c,CPM_MULT
     call    BDOS
+    or      a               ;function 44 return code: 0=OK, 0FFH=error
+    call    nz,set_single   ;invalid count: fall back to single sector
 
 ;   set dma address
     ld      de,(_cpbufpt)
@@ -279,8 +332,8 @@ write_start_3:
     call    BDOS            ;write records
     ld      (_status),a
     or      a               ;0 if write OK
-    jr      nz,exit      ;end if so
+    jp      nz,copy_done    ;error: close files before returning
 
-    jr      copy_loop_3
+    jp      copy_loop_3
 
 endif
