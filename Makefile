@@ -3,6 +3,7 @@ ENVSRC = sysenv.asm vt100.asm
 CRT = z3_crt0.asm
 HEADER = zmc.h internal_env.h vlib.h
 ZMC = zmc.com
+ZMC2 = zmc2.com
 ZMC3 = zmc3.com
 TCAP = vt100.z3t vt100_ul.z3t adm-3a.z3t heath19.z3t
 ENV = vt100.env vt100_ul.env adm-3a.env heath19.env
@@ -13,7 +14,7 @@ ZCC = zcc
 ZASM = zasm
 
 .PHONY: all
-all: $(ZMC) $(ZMC3) $(TEST) $(TCAP) $(ENV)
+all: $(ZMC) $(ZMC2) $(TEST) $(TCAP) $(ENV)
 
 # ZMC build is using:
 #  The sccz80 assembler (defaults to __smallc linkage)
@@ -31,15 +32,14 @@ $(ZMC): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
 	-m --list \
 	-o $@
 
-$(ZMC3): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
+$(ZMC2): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
 	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall \
 	-pragma-output:noprotectmsdos \
 	-pragma-output:noredir -DAMALLOC \
 	-pragma-define:CRT_STACK_SIZE=512 \
-	-DUSE_CPM3_MULTI_SECTOR \
-	-Ca -DUSE_CPM3_MULTI_SECTOR \
+	-DUSE_CPM2_SINGLE_SECTOR \
+	-Ca -DUSE_CPM2_SINGLE_SECTOR \
 	$(SOURCE) -lvlib -lsyslib \
-	-m --list \
 	-o $@
 
 
@@ -88,4 +88,4 @@ bioskeyt.com: bioskeyt.asm Makefile
 
 .PHONY: clean
 clean:
-	rm -f $(ZMC) $(ZMC3) $(ENV) $(TCP) $(TEST) *.map *.lis
+	rm -f $(ZMC) $(ZMC2) $(ZMC3) $(ENV) $(TCP) $(TEST) *.map *.lis

@@ -79,22 +79,13 @@ void help() {
     curoff();
     stndend();
     cls();
-    gotoxy( ( line++ ) << 8 | 1 );
-    if ( SCREEN_HEIGHT >= 20 ) {
-        puts( "                           " );
-        puts( " #######  #     #   #####  " );
-        puts( "      #   ##   ##  #     # " );
-        puts( "     #    # # # #  #       " );
-        puts( "    #     #  #  #  #       " );
-        puts( "   #      #     #  #       " );
-        puts( "  #       #     #  #     # " );
-        puts( " #######  #     #   #####  " );
-        puts( "                           " );
-        line = 13;
-    }
-
-    puts( "= ZMC 1.3-rc =" );
-    puts( "Volney Torres - Martin Homuth-Rosemann - Steven Hirsch\n" );
+    gotoxy( line << 8 | 1 );
+    puts( "= ZMC 2.0-rc " \
+        "= Volney Torres - Martin Homuth-Rosemann - Steven Hirsch" );
+#ifdef USE_CPM2_SINGLE_SECTOR
+    puts( "Single Sector Test Version" );
+#endif
+    line += 2;
     const uint8_t helppos = 40;
     gotoxy( line << 8 | 1 );
     printf( "A: ... P:" );
@@ -118,9 +109,24 @@ void help() {
     printf( "[F10], [ESC]0, [ESC][ESC], QUIT, EXIT" );
     gotoxy( ( line++ ) << 8 | helppos );
     puts( "Exit" );
-    printf( "^C, CTRLC, RESET" );
+    printf( "RESET" );
     gotoxy( ( line++ ) << 8 | helppos );
     puts( "Reset Disk System (^C)" );
+    printf( "SEL <AFN> / + <AFN>" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Select file(s) (with wildcards)" );
+    printf( "DES <AFN> / - <AFN>" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Deselect file(s) (with wildcards)" );
+    printf( "DUP <NEWNAME>" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Duplicate active file on same drive" );
+    printf( "REN <NEWNAME>" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Rename active file on same drive" );
+    printf( "<ESC><CR>" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Copy selected filename to prompt" );
     wait_key_hw();
     refresh_ui( PAN_BOTH );
 }
@@ -178,7 +184,7 @@ const command_t commands[] = {
     { "DEL", delete_cmd }, { "ERA", delete_cmd },  { "RM", delete_cmd },
     { "TOP", first_file }, { "POS1", first_file },
     { "BOT", last_file },  { "END", last_file },
-    { "^C", reset }, { "CTRLC", reset }, { "RESET", reset }
+    { "RESET", reset }
 };
 
 
@@ -410,13 +416,44 @@ int main( int argc, char **argv ) {
             } else if ( !strncmp( cmdline, "EXIT", 4 ) || !strncmp( cmdline, "QUIT", 4 ) ) {
                 loop = 0;
             } else if ( *cmdline ) { // scan cmd list and get function
-                command_func_t function = find_command( cmdline, commands, num_commands );
-                if ( function ) // if found ..
-                    function(); // .. execute it
+                // commands with arguments
+                if ( !strncmp( cmdline, "REN ", 4 ) ) {
+                    char *newname = cmdline + 4;
+                    while ( *newname == ' ' )
+                        newname++;
+                    if ( *newname )
+                        rename_cmd( newname );
+                } else if ( !strncmp( cmdline, "DUP ", 4 ) ) {
+                    char *newname = cmdline + 4;
+                    while ( *newname == ' ' )
+                        newname++;
+                    if ( *newname )
+                        dup_cmd( newname );
+                } else if ( !strncmp( cmdline, "SEL", 3 ) || cmdline[0] == '+' ) {
+                    char *pat = ( cmdline[0] == '+' ) ? cmdline + 1 : cmdline + 3;
+                    while ( *pat == ' ' )
+                        pat++;
+                    if ( *pat )
+                        sel_cmd( pat ); // no argument -> do nothing
+                } else if ( !strncmp( cmdline, "DES", 3 ) || cmdline[0] == '-' ) {
+                    char *pat = ( cmdline[0] == '-' ) ? cmdline + 1 : cmdline + 3;
+                    while ( *pat == ' ' )
+                        pat++;
+                    if ( *pat )
+                        des_cmd( pat ); // no argument -> do nothing
+                } else {
+                    command_func_t function = find_command( cmdline, commands, num_commands );
+                    if ( function ) // if found ..
+                        function(); // .. execute it
+                }
             }
             // clear cmd string
             cp = cmdline;
             *cp = '\0';
+        } else if ( k == '+' ) { // shortcut: + selects all files
+            sel_cmd( "*" );
+        } else if ( k == '-' ) { // shortcut: - deselects all files
+            des_cmd( "*" );
         } else if ( k == TAB ) { // TAB: OTHER_PANEL
             change_focus();
         }
@@ -443,6 +480,14 @@ int main( int argc, char **argv ) {
             k = wait_key_hw();
             if ( k == ESC ) { // <ESC><ESC>
                 loop = 0;     // quit program
+            } else if ( k == CR ) { // <ESC><CR>: copy selected filename to cmd line
+                if ( App.active_panel->num_files > 0 ) {
+                    char *fn = App.active_panel->files[ App.active_panel->current_idx ].cpmname;
+                    while ( *fn && cp < cmdline + CMDLINELEN ) {
+                        *cp++ = toupper( ( unsigned char )*fn++ );
+                        *cp = '\0';
+                    }
+                }
             }
             // now comes the mc style coding ESC1...ESC0 as proposed by SvenMb
             else if ( k == '1' ) { // <ESC>1

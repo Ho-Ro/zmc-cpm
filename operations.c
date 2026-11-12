@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 */
 #include <cpm.h>
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -407,10 +408,27 @@ esc_file:
 }
 
 
+static uint8_t yes_no( void );
+
 // copy a specific file by its name using asm function
 static int16_t copy_file_by_name( Panel *src, Panel *dst, const char *name ) {
     int16_t rc = 0;
     prepare_fcb( name, src, dst );
+
+    // overwrite confirmation: check if destination exists in dst panel's file list
+    if ( dst ) {
+        for ( int i = 0; i < dst->num_files; i++ ) {
+            if ( strcmp( dst->files[ i ].cpmname, name ) == 0 ) {
+                gotoxy( STATUS_ROW << 8 | 1 );
+                ereol();
+                printf( " File exists: %s, overwrite? (N/y) ", name );
+                if ( !yes_no() )
+                    return 0; // cancelled by user, not an error
+                break;
+            }
+        }
+    }
+
     if ( DEBUG ) {
         gotoxy( DEBUG_ROW << 8 | 1 );
         ereol();
@@ -553,6 +571,206 @@ void delete_cmd() {
     }
     gotoxy( STATUS_ROW << 8 | 1 );
     ereol(); // clear status line
+}
+
+
+// rename the active file on the same drive
+// usage: REN FILENAME.NEW  (new name comes from command line, no prompt)
+void rename_cmd( const char *newname ) {
+    Panel *p = App.active_panel;
+    if ( !p->num_files )
+        return;
+
+    char *oldname = p->files[ p->current_idx ].cpmname;
+
+    if ( strcmp( newname, oldname ) == 0 )
+        return; // nothing to do
+
+    // collision check against panel file list (no BDOS FFST needed)
+    for ( int i = 0; i < p->num_files; i++ ) {
+        if ( strcmp( p->files[ i ].cpmname, newname ) == 0 ) {
+            gotoxy( STATUS_ROW << 8 | 1 );
+            ereol();
+            printf( " File exists" );
+            wait_key_hw();
+            return;
+        }
+    }
+
+    // prepare source and destination FCBs (space-padded, like prepare_fcb does)
+    prepare_fcb( oldname, p, NULL );   // fills fcb_src
+    prepare_fcb( newname, NULL, p );   // fills fcb_dst
+
+    // build combined RENAME FCB: source [0..15], destination [16..31]
+    uint8_t ren_fcb[ 36 ];
+    memset( ren_fcb, 0, sizeof( ren_fcb ) );
+    memcpy( ren_fcb, fcb_src, 16 );
+    memcpy( ren_fcb + 16, fcb_dst, 16 );
+
+    uint8_t result = bdos( CPM_REN, ren_fcb );     // BDOS function 23 (F_RENAME)
+    if ( result == 255 ) {
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " Rename error" );
+        wait_key_hw();
+        return;
+    }
+
+    load_directory( p );
+    fill_panel( p );
+    gotoxy( STATUS_ROW << 8 | 1 );
+    ereol(); // clear status line
+}
+
+// duplicate the active file on the same drive
+// usage: DUP FILENAME.NEW  (new name comes from command line, no prompt)
+void dup_cmd( const char *newname ) {
+    Panel *p = App.active_panel;
+    if ( !p->num_files )
+        return;
+
+    char *oldname = p->files[ p->current_idx ].cpmname;
+
+    if ( strcmp( newname, oldname ) == 0 )
+        return; // nothing to do
+
+    // prepare source and destination FCBs
+    prepare_fcb( oldname, p, NULL );   // fills fcb_src
+    prepare_fcb( newname, NULL, p );   // fills fcb_dst
+
+    // collision check against panel file list (already in memory)
+    for ( int i = 0; i < p->num_files; i++ ) {
+        if ( strcmp( p->files[ i ].cpmname, newname ) == 0 ) {
+            gotoxy( STATUS_ROW << 8 | 1 );
+            ereol();
+            printf( " File exists: %s, overwrite? (N/y) ", newname );
+            if ( !yes_no() )
+                return;
+            break;
+        }
+    }
+
+    uint8_t result = cpsrcdst();
+    if ( result ) {
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        if ( result == 1 )
+            printf( " Dup error: directory full" );
+        else if ( result == 2 )
+            printf( " Dup error: disk full" );
+        else if ( result == 0xFF )
+            printf( " Dup error: HW error" );
+        else
+            printf( " Dup error: %d", result );
+        printf( " (press any key)" );
+        wait_key_hw();
+        bdos( CPM_SRDS, 1 << ( p->drive - 'A' ) ); // DRV_RESET
+        return;
+    }
+
+    // Force drive re-login so CP/M re-reads the directory from disk
+    bdos( CPM_LGIN, p->drive - 'A' );
+    load_directory( p );
+    fill_panel( p );
+    // if both panels show same drive, refresh both
+    if ( App.left.drive == App.right.drive )
+        copy_panel_content( p, ( p == &App.left ) ? &App.right : &App.left );
+    fill_panel( App.inactive_panel );
+    gotoxy( STATUS_ROW << 8 | 1 );
+    ereol(); // clear status line
+}
+
+// match one CP/M field (8-char filename or 3-char extension), CP/M style:
+// '*' fills the rest of the field with '?', '?' matches any single char.
+// Both buffers are space-padded to seg_len (8 or 3).
+static uint8_t match_segment( const char *name, const char *pattern,
+                              uint8_t seg_len ) {
+    uint8_t i;
+    for ( i = 0; i < seg_len; i++ ) {
+        char pc = pattern[ i ];
+        if ( pc == '*' )
+            return 1; // * fills rest of segment with ?: anything matches
+        if ( pc == '?' )
+            continue; // any char OK
+        if ( toupper( ( unsigned char )pc ) != toupper( ( unsigned char )name[ i ] ) )
+            return 0;
+    }
+    return 1;
+}
+
+// wildcard match, CP/M style:
+// '*' matches within a field (filename or extension) but NOT across the dot.
+// Use '*.*' to match all files. '?' matches one char. Case-insensitive.
+static uint8_t match_wildcard( const char *name, const char *pattern ) {
+    const char *n_dot = strchr( name, '.' );
+    const char *p_dot = strchr( pattern, '.' );
+
+    uint8_t n_fn_len = n_dot ? (uint8_t)( n_dot - name ) : (uint8_t)strlen( name );
+    uint8_t p_fn_len = p_dot ? (uint8_t)( p_dot - pattern ) : (uint8_t)strlen( pattern );
+    uint8_t fn_len = n_fn_len > p_fn_len ? n_fn_len : p_fn_len;
+
+    char n_fn[ 9 ], p_fn[ 9 ];
+    memset( n_fn, ' ', 8 ); n_fn[ 8 ] = '\0';
+    memset( p_fn, ' ', 8 ); p_fn[ 8 ] = '\0';
+    memcpy( n_fn, name, n_fn_len > 8 ? 8 : n_fn_len );
+    memcpy( p_fn, pattern, p_fn_len > 8 ? 8 : p_fn_len );
+
+    if ( !match_segment( n_fn, p_fn, 8 ) )
+        return 0;
+
+    const char *n_ext = n_dot ? n_dot + 1 : "";
+    const char *p_ext = p_dot ? p_dot + 1 : "";
+    uint8_t n_ext_len = (uint8_t)strlen( n_ext );
+    uint8_t p_ext_len = (uint8_t)strlen( p_ext );
+
+    char n_ex[ 4 ], p_ex[ 4 ];
+    memset( n_ex, ' ', 3 ); n_ex[ 3 ] = '\0';
+    memset( p_ex, ' ', 3 ); p_ex[ 3 ] = '\0';
+    memcpy( n_ex, n_ext, n_ext_len > 3 ? 3 : n_ext_len );
+    memcpy( p_ex, p_ext, p_ext_len > 3 ? 3 : p_ext_len );
+
+    if ( !match_segment( n_ex, p_ex, 3 ) )
+        return 0;
+
+    return 1;
+}
+
+// mass-select files matching a wildcard pattern
+void sel_cmd( char *pattern ) {
+    Panel *p = App.active_panel;
+    int i, count = 0;
+    for ( i = 0; i < p->num_files; i++ ) {
+        if ( match_wildcard( p->files[ i ].cpmname, pattern ) ) {
+            if ( !( p->files[ i ].attrib & B_SEL ) ) {
+                p->files[ i ].attrib |= B_SEL;
+                if ( is_on_panel( i ) )
+                    draw_file_line( p, i );
+                count++;
+            }
+        }
+    }
+    gotoxy( STATUS_ROW << 8 | 1 );
+    ereol();
+    printf( " Selected %d file(s)", count );
+}
+
+// mass-deselect files matching a wildcard pattern
+void des_cmd( char *pattern ) {
+    Panel *p = App.active_panel;
+    int i, count = 0;
+    for ( i = 0; i < p->num_files; i++ ) {
+        if ( match_wildcard( p->files[ i ].cpmname, pattern ) ) {
+            if ( p->files[ i ].attrib & B_SEL ) {
+                p->files[ i ].attrib &= ~B_SEL;
+                if ( is_on_panel( i ) )
+                    draw_file_line( p, i );
+                count++;
+            }
+        }
+    }
+    gotoxy( STATUS_ROW << 8 | 1 );
+    ereol();
+    printf( " Deselected %d file(s)", count );
 }
 
 
