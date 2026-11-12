@@ -24,13 +24,14 @@ specifically designed for CP/M systems based on Z80 processors.
 - Loadable environment file for non-Z3 systems.
 
 ## WHAT'S NEW IN V2.0-rc (The Ho-Ro Update)
-- DUP: Duplicate active file on the same drive (DUP FILENAME.NEW) with overwrite confirmation.
-- REN: Rename the active file on the same drive (REN FILENAME.NEW) with collision check.
-- SEL/DES: Mass-select/deselect files with CP/M-style wildcards (SEL *.COM, DES *.BAK).
-- + / - shortcuts: Same as SEL / DES.
-- <ESC><CR>: Copy active filename to the command line (Midnight Commander style).
+- `DUP`: Duplicate active file on the same drive (`DUP FILENAME.NEW`) with overwrite confirmation.
+- `REN`: Rename the active file on the same drive (`REN FILENAME.NEW`) with collision check.
+- `SEL`/`DES`: Mass-select/deselect files with CP/M-style wildcards (`SEL *.COM`, `DES *.BAK`).
+- `+` / `-` shortcuts: Same as `SEL` / `DES`.
+- `<ESC><CR>`: Copy active filename to the command line (Midnight Commander style).
 - Fixed: CP/M 3 multi-sector copy (buffer overflow, exact-multiple truncation, false "directory full").
 - Fixed: DMA pointer corruption in copy engine.
+- `zmctest.com` is the fallback test version that uses the slow single sector read/write for copy.
 
 ## TERMINAL ADAPTION
 By calling the program with `ZMC --TCAP [TCAPFILE]`, you can load the a 128 byte TCAP file
@@ -62,22 +63,22 @@ as well as the wordstar key bindings:
 `^E` = UP, `^X` = DOWN, `^R` = PAGEUP, `^C` = PAGEDOWN
 
 The function keys `F1`...`F10` can be substituted by the midnight commander solution
-`[ESC]1` ... `[ESC]0`, i.e. type [ESC] and then the digit.
+`[ESC]1` ... `[ESC]0`, i.e. type `[ESC]` and then the digit.
 
 ZMC allows also to enter commands in the prompt line `A> ` followed by `[CR]`,
 i.e.
 
-- HELP
-- VIEW (or TYPE or CAT)
-- DUMP (or HEX)
-- COPY (or CP)
-- DEL (or ERA or RM),
-- EXIT (or QUIT).
-- RESET (reset disk drives, same as CCP's ^C)
-- SEL <AFN>, + <AFN> (select files with wildcards, e.g. SEL *.COM)
-- DES <AFN>, + <AFN> (deselect files with wildcards, e.g. DES X*.COM)
-- DUP FILENAME.NEW (copy active file to new file on the same drive)
-- REN FILENAME.NEW (rename active file)
+- `HELP`
+- `VIEW` (or `TYPE` or `CAT`)
+- `DUMP` (or `HEX`)
+- `COPY` (or `CP`)
+- `DEL` (or `ERA` or `RM`),
+- `EXIT` (or `QUIT`).
+- `RESET` (reset disk drives, same as CCP's `^C`)
+- `SEL <AFN>`, `+ <AFN>` (select files with wildcards, e.g. `SEL *.COM`)
+- `DES <AFN>`, `+ <AFN>` (deselect files with wildcards, e.g. `DES X*.COM`)
+- `DUP FILENAME.NEW` (copy active file to new file on the same drive)
+- `REN FILENAME.NEW` (rename active file)
 
 ## TECHNICAL SPECIFICATIONS
 - Compiler: z88dk (ZCC) with -O3 optimization using
