@@ -1,17 +1,14 @@
 ```
 ======================================================================
-           Z80 MANAGEMENT COMMANDER (ZMC) - Version 1.3-rc
-                 "The Crystallized & Global Release"
+           Z80 MANAGEMENT COMMANDER (ZMC) - Version 2.0-rc1
+                    "The USER Support Release"
   VCFed team: Volney Torres & Martin Homuth-Rosemann & Steven Hirsch
 ======================================================================
 ```
 
 ## DESCRIPTION
 ZMC is a dual-panel file manager inspired by Norton Commander,
-specifically designed for CP/M systems based on Z80 processors,
-but an 8080 version is also available.
-Version 1.2 consolidates the code structure for superior speed and
-global compatibility.
+specifically designed for CP/M systems based on Z80 processors.
 
 ## WHAT'S NEW IN V1.2 (The Ho-Ro Update)
 - CP/M 3 SUPPORT: Native display of file date and time stamps.
@@ -26,6 +23,21 @@ global compatibility.
 - Z3 DSLIB & SYSLIB ready: Z80 optimised functions for directory access can replace C code.
 - Loadable environment file for non-Z3 systems.
 
+## WHAT'S NEW IN V2.0-rc1 (The Ho-Ro Update)
+- Handle `USER` for the panels:
+  - Open panels on start: `zmc i 1j` opens panels I: (left) and 1J: (right).
+  - Change active panel drive/user from cmd line with e.g. K:, 1:, 1K: or K1: terminated by <CR>.
+  - Copy from panel to panel also possible for different user on the same drive.
+- `DUP`: Duplicate active file on the same panel (`DUP FILENAME.NEW`) with overwrite confirmation.
+- `REN`: Rename the active file on the same panel (`REN FILENAME.NEW`) with collision check.
+- `SEL`/`DES`: Mass-select/deselect files with CP/M-style wildcards (`SEL *.COM`, `DES *.BAK`).
+- `+` / `-` shortcuts: Same as `SEL` / `DES`.
+- `<ESC><CR>`: Copy active filename to the command line (Midnight Commander style).
+- `^U` (Ctrl U) exchanges left and right panel (Midnight Commander style).
+- Fixed: CP/M 3 multi-sector copy (buffer overflow, exact-multiple truncation, false "directory full").
+- Fixed: DMA pointer corruption in copy engine.
+- `zmctest.com` is the fallback test version that uses the slow single sector read/write for copy.
+
 ## TERMINAL ADAPTION
 By calling the program with `ZMC --TCAP [TCAPFILE]`, you can load the a 128 byte TCAP file
 with the definitions of the terminal functions.
@@ -35,45 +47,60 @@ Lear Siegler ADM-3A `adm-3a.tcp` (untested), Heath/Zenith19 `heath19.tcp` (untes
 and the test file `vt100_ul.tcp`, the VT100 setting with underline instead of invers.
 
 ## KEYMAP
-|  KEY                 | Function                          |
-|----------------------|-----------------------------------|
-| `[Arrows Up/Down]`   | Navigate the file list            |
-| `[TAB]`              | Switch active panel (A <-> B)     |
-| `[Space]`            | Tag file for batch operations (*) |
-| `[F1]`  or `[ESC]1`  | Quick HELP and version credits    |
-| `[F3]`  or `[ESC]3`  | VIEW file with MORE/ESC support   |
-| `[F4]`  or `[ESC]4`  | DUMP file with MORE/ESC support   |
-| `[F5]`  or `[ESC]5`  | Batch COPY                        |
-| `[F8]`  or `[ESC]8`  | Batch DELETE                      |
-| `[F10]` or `[ESC]0`  | EXIT to system prompt             |
-| `[ESC][ESC]`         | EXIT to system prompt             |
+|  KEY                | Function                             |
+|---------------------|--------------------------------------|
+| `[Arrows Up/Down]`  | Navigate the file list               |
+| `[TAB]`             | Switch active panel (L <-> R)        |
+| `[^U]`              | Exchange panels (L <-> R)            |
+| `[Space]`           | Tag file for batch operations (*)    |
+| `[ESC][CR]`         | Copy active filename to command line |
+| `[F1]`  or `[ESC]1` | Quick HELP and version credits       |
+| `[F3]`  or `[ESC]3` | VIEW file with MORE/ESC support      |
+| `[F4]`  or `[ESC]4` | DUMP file with MORE/ESC support      |
+| `[F5]`  or `[ESC]5` | Batch COPY                           |
+| `[F8]`  or `[ESC]8` | Batch DELETE                         |
+| `[F10]` or `[ESC]0` | EXIT to system prompt                |
+| `[ESC][ESC]`        | EXIT to system prompt                |
 
 The key handling suports the standard `VT100` and some `VT52` cursor and function keys
 as well as the wordstar key bindings:
 
 `^E` = UP, `^X` = DOWN, `^R` = PAGEUP, `^C` = PAGEDOWN
 
-The function keys `F1`...`F10` can be substituted by the midnight commander solution `[ESC]1` ... `[ESC]0`, i.e. type [ESC] and then the digit.
+The function keys `F1`...`F10` can be substituted by the midnight commander solution
+`[ESC]1` ... `[ESC]0`, i.e. type `[ESC]` and then the digit.
 
 ZMC allows also to enter commands in the prompt line `A> ` followed by `[CR]`,
 i.e.
 
-- HELP
-- VIEW (or TYPE or CAT)
-- DUMP (or HEX)
-- COPY (or CP)
-- DEL (or ERA or RM),
-- EXIT (or QUIT).
+- `A:`...`P:`    (Select drive for active panel)
+- `0:`...`15:`   (Select user for active panel)
+- `0A:`...`15P:` (Select user and drive for active panel)
+- `A0:`...`P15:` (Select user and drive for active panel)
+- `HELP`
+- `VIEW` (or `TYPE` or `CAT`)
+- `DUMP` (or `HEX`)
+- `COPY` (or `CP`)
+- `DEL` (or `ERA` or `RM`),
+- `EXIT` (or `QUIT`).
+- `RESET` (reset disk drives, same as CCP's `^C`)
+- `SEL <AFN>`, `+ <AFN>` (select files with wildcards, e.g. `SEL *.COM`)
+- `DES <AFN>`, `+ <AFN>` (deselect files with wildcards, e.g. `DES X*.COM`)
+- `DUP FILENAME.NEW` (copy active file to new file on the same drive)
+- `REN FILENAME.NEW` (rename active file)
 
 ## TECHNICAL SPECIFICATIONS
-- Compiler: z88dk (ZCC) native/in Docker with -O3 optimization using
+- Compiler: z88dk (ZCC) with -O3 optimization using
   - sccz80 assembler (defaults to __smallc linkage)
   - classic library
   - cpm target personality
 - `ZMC.COM`requires a Z80 or compatible processor.
 - Default terminal: ANSI/VT100 (Full support for real hardware and emulators).
 - Memory: Dynamic Heap management to support large directories.
-- CP/M3: Program adapts the screen size automatically from SCB info.
+- CP/M3 features:
+  - Program adapts the screen size automatically from SCB info.
+  - Panels show date/time file stamps
+  - Fast file copy using CP/M3 multi sector read/write
 
 ### Development and configuration support
 Calling the program with command line argument as `ZMC --CONFIG` shows system

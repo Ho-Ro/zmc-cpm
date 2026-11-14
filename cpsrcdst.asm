@@ -45,12 +45,15 @@ SECTION     data_user
 rdsek: DEFB     0           ;read sector index
 wrsek: DEFB     0           ;write sector index
 endof: DEFB     0           ;end of file flag
+cpbuf_orig: DEFW    0       ;saved _cpbufpt (buffer start)
 
 ;PUBLIC      _status
 EXTERN      _fcb_src
 EXTERN      _fcb_dst
 EXTERN      _cpbufpt
 EXTERN      _cpbufsz
+EXTERN      _cpsrc_src_user
+EXTERN      _cpsrc_dst_user
 
 DEFC    sfcbcr  = _fcb_src+32   ;current read record
 DEFC    sfcbce  = _fcb_src+12   ;current read extend
@@ -65,13 +68,23 @@ SECTION     code_user
 PUBLIC      _cpsrcdst
 
 _cpsrcdst:
-;   open source file
+;   save original buffer pointer (advanced during read/write)
+    ld      hl,(_cpbufpt)
+    ld      (cpbuf_orig),hl
+
+;   open source file (user = SRC, set by caller)
     ld      de,_fcb_src
     ld      c,CPM_OPN
     call    BDOS            ;A=0xFF: error
     ld      (_status),a
     inc     a
     jp      z,exit
+
+;   switch to destination user
+    ld      hl,_cpsrc_dst_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
 
 ;   source file open, prepare destination
     ld      de,_fcb_dst
@@ -84,6 +97,12 @@ _cpsrcdst:
     inc     a
     jp      z,exit
 
+;   switch back to source user for read loop
+    ld      hl,_cpsrc_src_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
+
 ;   zero the current records/extends
     xor     a
     ld      (sfcbcr),a
@@ -92,7 +111,7 @@ _cpsrcdst:
     ld      (dfcbce),a
     ld      (endof),a       ;we're not at the end of file
 
-ifdef  USE_CPM3_MULTI_SECTOR
+ifndef  USE_CPM2_SINGLE_SECTOR
 
 ;   check the CP/M version
 ;   use multi sector rd/wr for CP/M 3
@@ -103,7 +122,7 @@ ifdef  USE_CPM3_MULTI_SECTOR
     cp      31h             ; CP/M3?
     jp      z,copy_loop_3   ; yes
 
-endif
+else
 
 ;   COPY LOOP for CP/M 2.2 (SINGLE SECTOR)
 ;   source file open, dest file open
@@ -115,6 +134,10 @@ copy_loop_2:
     ld      hl,endof
     or      (hl)
     jp      nz,copy_done    ;jump to end of file
+
+;   reset DMA pointer to buffer start (advanced during previous write cycle)
+    ld      hl,(cpbuf_orig)
+    ld      (_cpbufpt),hl
 
 ;   zero the sector indexes
     ld      (rdsek),a
@@ -163,11 +186,21 @@ write_start_2:
     ld      hl,rdsek        ;preincrement so we can decrement before test.
     inc     (hl)
 
+;   reset DMA to buffer start (was advanced during read phase)
+    ld      hl,(cpbuf_orig)
+    ld      (_cpbufpt),hl
+
 ;   set dma address
     ld      de,(_cpbufpt)
 
 write_loop_2:
     call    setdma
+
+    ; switch to destination user for write
+    ld      hl,_cpsrc_dst_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
 
     ld      a,(rdsek)
     dec     a
@@ -181,12 +214,18 @@ write_loop_2:
     or      a               ;0 if write OK
     jp      nz,copy_done    ;error: close files before returning
 
+    ; switch back to source user after write
+    ld      hl,_cpsrc_src_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
+
     ld      a,(wrsek)
     inc     a
     ld      (wrsek),a
     ld      hl,_cpbufsz     ;number of buffers we have
     cp      (hl)
-    jr      nc,copy_loop_2
+    jp      nc,copy_loop_2  ;was jr, now jp (range)
 
     ld      l,a             ;ready to shift
     xor     a
@@ -201,6 +240,7 @@ write_loop_2:
 
     jr      write_loop_2    ;loop until buffer
 
+endif
 
 ; common exit routines for CP/M 2.2 and CP/M 3
 copy_done:
@@ -214,6 +254,11 @@ copy_done:
     ld      c,CPM_MULT
     call    BDOS
 copy_done_skip_ms_reset:
+    ; close destination (DST user)
+    ld      hl,_cpsrc_dst_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
     ld      de,_fcb_dst     ;destination close
     ld      c,CPM_CLS
     call    BDOS            ;255 if error
@@ -226,17 +271,34 @@ dst_close_err:
     ld      a,b             ;restore close result (0xFF)
     ld      (_status),a
 src_close:
+    ; close source (SRC user)
+    ld      hl,_cpsrc_src_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
     ld      de,_fcb_src     ;source close
     ld      c,CPM_CLS
     call    BDOS            ;255 if error
     ld      b,a             ;save close result
     inc     a               ;A=1 if OK, A=0 if error
     jr      z,src_close_err ;source close failed -> save error
+    ; restore SRC user before return
+    ld      hl,_cpsrc_src_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
     jr      exit            ;both closes OK, _status unchanged
 src_close_err:
     ld      a,b             ;restore close result (0xFF)
     ld      (_status),a
+    ; restore SRC user before return
+    ld      hl,_cpsrc_src_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
 exit:
+    ld      hl,(cpbuf_orig)
+    ld      (_cpbufpt),hl     ;restore buffer pointer for next copy
     ld      de,TBUFF
     call    setdma
     ld      h,0
@@ -250,7 +312,7 @@ setdma:
     jp      BDOS
 
 
-ifdef USE_CPM3_MULTI_SECTOR
+ifndef USE_CPM2_SINGLE_SECTOR
 
 ;   set multi-sector count to 1 (single sector) as fallback
 set_single:
@@ -267,7 +329,11 @@ copy_loop_3:
     xor     a
     ld      hl,endof
     or      (hl)
-    jp      nz,copy_done    ;jump to end of file
+    jr      nz,copy_done    ;jump to end of file
+
+;   reset DMA pointer to buffer start (advanced during previous write cycle)
+    ld      hl,(cpbuf_orig)
+    ld      (_cpbufpt),hl
 
 ;   set dma address
     ld      de,(_cpbufpt)
@@ -307,7 +373,7 @@ endoffile_3:
     ld      (endof),a       ;set end of file flag (A=1 from cp 1)
     ld      a,h             ;number of sectors read
     or      a               ;test zero
-    jp      z,eof_success   ;nothing read -> normal EOF -> success
+    jr      z,eof_success   ;nothing read -> normal EOF -> success
     ld      e,h             ;E = H -> write partial buffer
     jr      write_start_3   ;write partial block, then endof=1 exits loop
 
@@ -323,9 +389,19 @@ write_start_3:
     or      a               ;function 44 return code: 0=OK, 0FFH=error
     call    nz,set_single   ;invalid count: fall back to single sector
 
+;   reset DMA to buffer start (was advanced during read phase)
+    ld      hl,(cpbuf_orig)
+    ld      (_cpbufpt),hl
+
 ;   set dma address
     ld      de,(_cpbufpt)
     call    setdma
+
+    ; switch to destination user for write
+    ld      hl,_cpsrc_dst_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
 
     ld      de,_fcb_dst     ;destination
     ld      c,CPM_WRIT
@@ -333,6 +409,12 @@ write_start_3:
     ld      (_status),a
     or      a               ;0 if write OK
     jp      nz,copy_done    ;error: close files before returning
+
+    ; switch back to source user after write
+    ld      hl,_cpsrc_src_user
+    ld      e,(hl)
+    ld      c,CPM_SUID
+    call    BDOS
 
     jp      copy_loop_3
 

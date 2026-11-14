@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include <cpm.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -181,7 +182,10 @@ void draw_header( Panel *p ) {
         rtisec();
         if ( p == App.active_panel )
             stndout();
-        printf( " DISK %c: ", p->drive );
+        if ( p->user == 0 )
+            printf( " DISK %c: ", p->drive );
+        else
+            printf( " DISK %u%c: ", p->user, p->drive );
         if ( p == App.active_panel )
             stndend();
         ltisec();
@@ -189,7 +193,10 @@ void draw_header( Panel *p ) {
     } else {
         if ( p == App.active_panel )
             stndout();
-        printf( "[ DISK %c: ]", p->drive );
+        if ( p->user == 0 )
+            printf( "[ DISK %c: ]", p->drive );
+        else
+            printf( "[ DISK %u%c: ]", p->user, p->drive );
         if ( p == App.active_panel )
             stndend();
     }
@@ -209,10 +216,13 @@ void draw_footer( void ) {
 }
 
 
-// cmd line with active drive
+// cmd line with active drive and user
 void show_prompt() {
     gotoxy( STATUS_ROW << 8 | 1 );
-    printf( "%c> %s", App.active_panel->drive, cmdline );
+    if ( App.active_panel->user == 0 )
+        printf( "%c> %s", App.active_panel->drive, cmdline );
+    else
+        printf( "%u%c> %s", App.active_panel->user, App.active_panel->drive, cmdline );
     ereol();
     curon();
 }
@@ -239,6 +249,8 @@ void change_focus() {
     Panel *tmp = App.active_panel;
     App.active_panel = App.inactive_panel;
     App.inactive_panel = tmp;
+    // set BDOS user number for new active panel
+    bdos( 32, App.active_panel->user );
     draw_header( &App.left );
     draw_header( &App.right );
     // chirurgical update: refresh only the lines with cursors

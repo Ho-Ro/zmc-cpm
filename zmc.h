@@ -121,6 +121,7 @@ typedef struct {
     int16_t current_idx;
     int16_t top_idx;
     char drive;
+    uint8_t user;
     uint8_t show_date;
 } Panel;
 
@@ -171,6 +172,12 @@ void dump_file(void );
 void copy_cmd( void );
 void delete_cmd( void );
 void change_drive( char k );
+void change_user( uint8_t u );
+void change_drive_user( char d, uint8_t u );
+void rename_cmd( const char *newname );
+void dup_cmd( const char *newname );
+void sel_cmd( char *pattern );
+void des_cmd( char *pattern );
 
 // keys.c
 uint8_t parse_function_keys( uint8_t key );
