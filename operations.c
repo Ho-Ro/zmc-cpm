@@ -575,6 +575,91 @@ void copy_cmd() {
 }
 
 
+// move active file(s) to the other panel (copy then delete source)
+// usage: MOVE  - moves selected file(s) or current file to other panel
+void move_cmd() {
+    if ( !App.active_panel->num_files                                          // nothing to do
+         || ( App.left.drive == App.right.drive && App.left.user == App.right.user ) ) // cannot move to same drive+user
+        return;
+    Panel *src = App.active_panel;
+    Panel *dst = ( App.active_panel == &App.left ) ? &App.right : &App.left;
+
+    int i, marked = 0, done = 0;
+    int8_t rc;
+
+    if ( DEBUG ) {
+        gotoxy( DEBUG_ROW << 8 | 1 ); // debugging line
+        printf( "move" );
+    }
+
+    for ( i = 0; i < src->num_files; i++ )
+        if ( src->files[ i ].attrib & B_SEL )
+            ++marked;
+    if ( marked == 0 ) {
+        // no selection: move current file
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " MOVING: %s -> %c:", src->files[ src->current_idx ].cpmname, dst->drive );
+        rc = copy_file_by_name( src, dst, src->files[ src->current_idx ].cpmname );
+        if ( rc == 0 ) {
+            bdos( 32, src->user );
+            prepare_fcb( src->files[ src->current_idx ].cpmname, src, NULL );
+            bdos( CPM_DEL, fcb_src );
+        }
+    } else {
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " MOVE SELECTED FILE(S) TO %c:? (N/y) ", dst->drive );
+        if ( !yes_no() )
+            return;
+
+        for ( i = 0; i < src->num_files; i++ ) {
+            if ( src->files[ i ].attrib & B_SEL ) {
+                ++done;
+                gotoxy( STATUS_ROW << 8 | 1 );
+                ereol();
+                printf( " MOVING [%d/%d]: %s", done, marked, src->files[ i ].cpmname );
+                rc = copy_file_by_name( src, dst, src->files[ i ].cpmname );
+                if ( rc == 0 ) {
+                    bdos( 32, src->user );
+                    prepare_fcb( src->files[ i ].cpmname, src, NULL );
+                    bdos( CPM_DEL, fcb_src );
+                    src->files[ i ].attrib &= ~B_SEL;
+                    if ( is_on_panel( i ) )
+                        draw_file_line( src, i );
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    if ( rc ) {
+        if ( 1 == rc )
+            printf( " - directory full" );
+        else if ( 2 == rc )
+            printf( " - disk full" );
+        else if ( 0xFF == rc )
+            printf( " - HW error" );
+        else
+            printf( " - error %d", rc );
+        printf( " (press any key)" );
+        wait_key_hw();
+        bdos( CPM_SRDS, 1 << ( dst->drive - 'A' ) ); // DRV_RESET
+    }
+    load_directory( App.active_panel );
+    fill_panel( App.active_panel );
+    if ( App.left.drive == App.right.drive && App.left.user == App.right.user ) {
+        copy_panel_content( App.active_panel, App.inactive_panel );
+        fill_panel( App.inactive_panel );
+    } else {
+        load_directory( App.inactive_panel );
+        fill_panel( App.inactive_panel );
+    }
+    gotoxy( STATUS_ROW << 8 | 1 );
+    ereol(); // clear status line
+}
+
+
 void delete_cmd() {
     if ( !App.active_panel->num_files ) // nothing to do
         return;
@@ -816,4 +901,148 @@ void change_user( uint8_t u ) {
 
 void change_drive_user( char d, uint8_t u ) {
     set_panel_drive_user( App.active_panel, d, u );
+}
+
+
+// set file attributes (CP/M 3 only, BDOS function 30)
+// usage: SET +S -A RO -R   (on active file or all selected files)
+//   +S / SYS  = set System     -S / DIR  = reset System
+//   +R / RO   = set Read-Only  -R / RW   = reset Read-Only
+//   +A        = set Archive    -A        = reset Archive
+void set_cmd() {
+    if ( !App.active_panel->num_files ) // nothing to do
+        return;
+
+    Panel *p = App.active_panel;
+
+    // parse the SET arguments (everything after "SET ")
+    char *arg = cmdline + 4; // skip "SET "
+    while ( *arg == ' ' )
+        arg++;
+
+    if ( *arg == '\0' ) {
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " SET: no attributes specified" );
+        wait_key_hw();
+        return;
+    }
+
+    uint8_t set_sys = 0, clr_sys = 0;
+    uint8_t set_ro = 0, clr_ro = 0;
+    uint8_t set_arch = 0, clr_arch = 0;
+
+    while ( *arg ) {
+        while ( *arg == ' ' )
+            arg++;
+        if ( *arg == '\0' )
+            break;
+
+        char *tok = arg;
+        while ( *arg && *arg != ' ' )
+            arg++;
+        if ( *arg )
+            *arg++ = '\0';
+
+        if ( !strcmp( tok, "+S" ) || !strcmp( tok, "SYS" ) )
+            set_sys = 1;
+        else if ( !strcmp( tok, "-S" ) || !strcmp( tok, "DIR" ) )
+            clr_sys = 1;
+        else if ( !strcmp( tok, "+R" ) || !strcmp( tok, "RO" ) )
+            set_ro = 1;
+        else if ( !strcmp( tok, "-R" ) || !strcmp( tok, "RW" ) )
+            clr_ro = 1;
+        else if ( !strcmp( tok, "+A" ) )
+            set_arch = 1;
+        else if ( !strcmp( tok, "-A" ) )
+            clr_arch = 1;
+        else {
+            gotoxy( STATUS_ROW << 8 | 1 );
+            ereol();
+            printf( " SET: unknown arg '%s'", tok );
+            wait_key_hw();
+            return;
+        }
+    }
+
+    int i, marked = 0, done = 0;
+    for ( i = 0; i < p->num_files; i++ )
+        if ( p->files[ i ].attrib & B_SEL )
+            ++marked;
+
+    if ( marked == 0 ) {
+        // no selection: set attribute on current file
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " SET: %s", p->files[ p->current_idx ].cpmname );
+        bdos( 32, p->user );
+        prepare_fcb( p->files[ p->current_idx ].cpmname, p, NULL );
+        // apply attribute changes to FCB type bytes (T1,T2,T3 at offsets 9,10,11)
+        if ( set_sys )  fcb_src[10] |= 0x80;
+        if ( clr_sys )  fcb_src[10] &= 0x7F;
+        if ( set_ro )   fcb_src[9]  |= 0x80;
+        if ( clr_ro )   fcb_src[9]  &= 0x7F;
+        if ( set_arch ) fcb_src[11] |= 0x80;
+        if ( clr_arch ) fcb_src[11] &= 0x7F;
+        uint8_t rc = bdos( CPM_SETATTR, fcb_src ); // BDOS function 30
+        if ( rc == 0xFF ) {
+            gotoxy( STATUS_ROW << 8 | 1 );
+            ereol();
+            printf( " - file not found" );
+            wait_key_hw();
+        } else {
+            // update in-memory attribute, no directory reload needed
+            if ( set_sys )  p->files[ p->current_idx ].attrib |= B_SYS;
+            if ( clr_sys )  p->files[ p->current_idx ].attrib &= ~B_SYS;
+            if ( set_ro )   p->files[ p->current_idx ].attrib |= B_RO;
+            if ( clr_ro )   p->files[ p->current_idx ].attrib &= ~B_RO;
+            if ( set_arch ) p->files[ p->current_idx ].attrib |= B_ARCH;
+            if ( clr_arch ) p->files[ p->current_idx ].attrib &= ~B_ARCH;
+            if ( is_on_panel( p->current_idx ) )
+                draw_file_line( p, p->current_idx );
+        }
+    } else {
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " SET ATTR SELECTED FILE(S)? (N/y) ");
+        if ( !yes_no() )
+            return;
+
+        for ( i = 0; i < p->num_files; i++ ) {
+            if ( p->files[ i ].attrib & B_SEL ) {
+                ++done;
+                gotoxy( STATUS_ROW << 8 | 1 );
+                ereol();
+                printf( " SET [%d/%d]: %s", done, marked, p->files[ i ].cpmname );
+                bdos( 32, p->user );
+                prepare_fcb( p->files[ i ].cpmname, p, NULL );
+                if ( set_sys )  fcb_src[10] |= 0x80;
+                if ( clr_sys )  fcb_src[10] &= 0x7F;
+                if ( set_ro )   fcb_src[9]  |= 0x80;
+                if ( clr_ro )   fcb_src[9]  &= 0x7F;
+                if ( set_arch ) fcb_src[11] |= 0x80;
+                if ( clr_arch ) fcb_src[11] &= 0x7F;
+                uint8_t rc = bdos( CPM_SETATTR, fcb_src );
+                if ( rc == 0xFF ) {
+                    gotoxy( STATUS_ROW << 8 | 1 );
+                    ereol();
+                    printf( " - file not found: %s", p->files[ i ].cpmname );
+                    wait_key_hw();
+                } else {
+                    // update in-memory attribute, no directory reload needed
+                    if ( set_sys )  p->files[ i ].attrib |= B_SYS;
+                    if ( clr_sys )  p->files[ i ].attrib &= ~B_SYS;
+                    if ( set_ro )   p->files[ i ].attrib |= B_RO;
+                    if ( clr_ro )   p->files[ i ].attrib &= ~B_RO;
+                    if ( set_arch ) p->files[ i ].attrib |= B_ARCH;
+                    if ( clr_arch ) p->files[ i ].attrib &= ~B_ARCH;
+                    p->files[ i ].attrib &= ~B_SEL;
+                    if ( is_on_panel( i ) )
+                        draw_file_line( p, i );
+                }
+            }
+        }
+    }
+    gotoxy( STATUS_ROW << 8 | 1 );
+    ereol(); // clear status line
 }

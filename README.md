@@ -1,6 +1,6 @@
 ```
 ======================================================================
-           Z80 MANAGEMENT COMMANDER (ZMC) - Version 2.0-rc1
+           Z80 MANAGEMENT COMMANDER (ZMC) - Version 2.0-rc2
                     "The USER Support Release"
   VCFed team: Volney Torres & Martin Homuth-Rosemann & Steven Hirsch
 ======================================================================
@@ -23,13 +23,15 @@ specifically designed for CP/M systems based on Z80 processors.
 - Z3 DSLIB & SYSLIB ready: Z80 optimised functions for directory access can replace C code.
 - Loadable environment file for non-Z3 systems.
 
-## WHAT'S NEW IN V2.0-rc1 (The Ho-Ro Update)
+## WHAT'S NEW IN V2.0-rc2 (The Ho-Ro Update)
 - Handle `USER` for the panels:
   - Open panels on start: `zmc i 1j` opens panels I: (left) and 1J: (right).
   - Change active panel drive/user from cmd line with e.g. K:, 1:, 1K: or K1: terminated by <CR>.
   - Copy from panel to panel also possible for different user on the same drive.
+- `MOVE`: Transfer file(s) from one panel to the other with overwrite confirmation.
 - `DUP`: Duplicate active file on the same panel (`DUP FILENAME.NEW`) with overwrite confirmation.
 - `REN`: Rename the active file on the same panel (`REN FILENAME.NEW`) with collision check.
+- `SET`: Set or reset the file attributes (only CP/M3): +R/-R (or RO/RW), +S/-S (or SYS/DIR), +A/-A.
 - `SEL`/`DES`: Mass-select/deselect files with CP/M-style wildcards (`SEL *.COM`, `DES *.BAK`).
 - `+` / `-` shortcuts: Same as `SEL` / `DES`.
 - `<ESC><CR>`: Copy active filename to the command line (Midnight Commander style).
@@ -58,6 +60,7 @@ and the test file `vt100_ul.tcp`, the VT100 setting with underline instead of in
 | `[F3]`  or `[ESC]3` | VIEW file with MORE/ESC support      |
 | `[F4]`  or `[ESC]4` | DUMP file with MORE/ESC support      |
 | `[F5]`  or `[ESC]5` | Batch COPY                           |
+| `[F6]`  or `[ESC]6` | Batch MOVE                           |
 | `[F8]`  or `[ESC]8` | Batch DELETE                         |
 | `[F10]` or `[ESC]0` | EXIT to system prompt                |
 | `[ESC][ESC]`        | EXIT to system prompt                |
@@ -81,9 +84,12 @@ i.e.
 - `VIEW` (or `TYPE` or `CAT`)
 - `DUMP` (or `HEX`)
 - `COPY` (or `CP`)
+- `MOVE` (or `MV`)
 - `DEL` (or `ERA` or `RM`),
 - `EXIT` (or `QUIT`).
 - `RESET` (reset disk drives, same as CCP's `^C`)
+- `SET` (Set or reset the file attributes (only for CP/M3):
+  +R/-R (or RO/RW), +S/-S (or SYS/DIR), +A/-A.)
 - `SEL <AFN>`, `+ <AFN>` (select files with wildcards, e.g. `SEL *.COM`)
 - `DES <AFN>`, `+ <AFN>` (deselect files with wildcards, e.g. `DES X*.COM`)
 - `DUP FILENAME.NEW` (copy active file to new file on the same drive)

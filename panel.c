@@ -207,10 +207,10 @@ void draw_header( Panel *p ) {
 void draw_footer( void ) {
     gotoxy( SCREEN_HEIGHT << 8 | 1 );
     stndout();
-    if ( PANEL_WIDTH >= 40 ) {
-        printf( "| A: - P: | TAB:Sw | F1:Help | F3:View | F4:Dump | F5:Copy | F8:Del | F10:Exit |" );
+    if ( PANEL_WIDTH >= 36 ) {
+        printf( "| F1:Help | F3:View | F4:Dump | F5:Copy | F6:Move | F8:Del | F10:Exit |" );
     } else if ( PANEL_WIDTH >= 30 ) {
-        printf( "A:-P:|TAB:Sw|F1:Help|F3:View|F4:Dump|F5:Copy|F8:Del|F10:Exit" );
+        printf( "|F1:Help|F3:View|F4:Dump|F5:Copy|F6:Move|F8:Del|F10:Exit|" );
     }
     stndend();
 }

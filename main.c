@@ -80,7 +80,7 @@ void help() {
     stndend();
     cls();
     gotoxy( line << 8 | 1 );
-    puts( "= ZMC 2.0-rc1 " \
+    puts( "= ZMC 2.0-rc " \
         "= Volney Torres - Martin Homuth-Rosemann - Steven Hirsch" );
 #ifdef USE_CPM2_SINGLE_SECTOR
     puts( "Single Sector Test Version" );
@@ -88,15 +88,6 @@ void help() {
     line += 2;
     const uint8_t helppos = 40;
     gotoxy( line << 8 | 1 );
-    printf( "0A: ... 15P:" );
-    gotoxy( ( line++ ) << 8 | helppos );
-    puts( "Select drive/user" );
-    printf( "[TAB]" );
-    gotoxy( ( line++ ) << 8 | helppos );
-    puts( "Change panel" );
-    printf( "[^U]" );
-    gotoxy( ( line++ ) << 8 | helppos );
-    puts( "Exchange panel" );
     printf( "[F3],  [ESC]3, TYPE, VIEW, CAT" );
     gotoxy( ( line++ ) << 8 | helppos );
     puts( "Show file" );
@@ -106,6 +97,9 @@ void help() {
     printf( "[F5],  [ESC]5, COPY, CP" );
     gotoxy( ( line++ ) << 8 | helppos );
     puts( "Copy file(s)" );
+    printf( "[F6],  [ESC]6, MOVE, MV" );
+    gotoxy( ( line++ ) << 8 | helppos );
+    puts( "Move file(s) to other panel" );
     printf( "[F8],  [ESC]8, DEL, ERA, RM" );
     gotoxy( ( line++ ) << 8 | helppos );
     puts( "Delete file(s)" );
@@ -184,6 +178,8 @@ const command_t commands[] = {
     { "VIEW", view_file }, { "TYPE", view_file },  { "CAT", view_file },
     { "DUMP", dump_file }, { "HEX", dump_file },
     { "COPY", copy_cmd },  { "CP", copy_cmd },
+    { "MOVE", move_cmd },  { "MV", move_cmd },
+    { "SET", set_cmd },
     { "DEL", delete_cmd }, { "ERA", delete_cmd },  { "RM", delete_cmd },
     { "TOP", first_file }, { "POS1", first_file },
     { "BOT", last_file },  { "END", last_file },
@@ -615,6 +611,8 @@ int main( int argc, char **argv ) {
                 dump_file();
             } else if ( k == '5' ) { // <ESC>5
                 copy_cmd();
+            } else if ( k == '6' ) { // <ESC>6
+                move_cmd();
             } else if ( k == '8' ) { // <ESC>8
                 delete_cmd();
             } else if ( k == '0' ) { // <ESC>0 (ZERO)

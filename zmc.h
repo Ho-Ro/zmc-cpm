@@ -99,6 +99,8 @@ typedef struct {            // CP/M Plus directory info for 3 files
 #define B_SYS 0x02
 #define B_RO 0x01
 
+#define CPM_SETATTR 30
+
 #define DEF_DMA 0x80
 
 
@@ -170,6 +172,8 @@ void load_directory( Panel *p );
 void view_file( void );
 void dump_file(void );
 void copy_cmd( void );
+void move_cmd( void );
+void set_cmd( void );
 void delete_cmd( void );
 void change_drive( char k );
 void change_user( uint8_t u );
