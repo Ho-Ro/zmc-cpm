@@ -168,7 +168,7 @@ static void print_cpm_attrib( uint8_t *ca ) {
     printf( "%c%c%c",
             *ca++ > 0x7F ? 'R' : ' ', // READ ONLY
             *ca++ > 0x7F ? 'S' : ' ', // SYSTEM
-            *ca++ > 0x7F ? 'B' : ' '  // file was BACKED UP
+            *ca++ > 0x7F ? 'A' : ' '  // file was ARCHIVED
     );
 }
 
@@ -250,7 +250,7 @@ void change_focus() {
     App.active_panel = App.inactive_panel;
     App.inactive_panel = tmp;
     // set BDOS user number for new active panel
-    bdos( 32, App.active_panel->user );
+    bdos( CPM_SUID, App.active_panel->user );
     draw_header( &App.left );
     draw_header( &App.right );
     // chirurgical update: refresh only the lines with cursors

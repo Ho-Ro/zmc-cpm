@@ -33,6 +33,8 @@ extern uint8_t LINES2;
 
 extern uint8_t VLIB_STATUS;
 
+extern uint8_t CPMversion;
+
 #define FILENAME_LEN 13
 #define SCREEN_HEIGHT ( LINES )
 #define PANEL_WIDTH ( COLUMNS / 2 )

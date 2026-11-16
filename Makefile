@@ -12,6 +12,8 @@ KEYTEST = keytest.com bioskeyt.com
 ZCC = zcc
 ZASM = zasm
 
+STACK_SIZE = 256
+
 .PHONY: all
 all: $(ZMC) $(ZMCTEST) $(KEYTEST) $(TCAP) $(ENV)
 
@@ -26,7 +28,7 @@ $(ZMC): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
 	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall \
 	-pragma-output:noprotectmsdos \
 	-pragma-output:noredir -DAMALLOC \
-	-pragma-define:CRT_STACK_SIZE=512 \
+	-pragma-define:CRT_STACK_SIZE=$(STACK_SIZE) \
 	$(SOURCE) -lvlib -lsyslib \
 	-m --list \
 	-o $@
@@ -35,7 +37,7 @@ $(ZMCTEST): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile
 	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall \
 	-pragma-output:noprotectmsdos \
 	-pragma-output:noredir -DAMALLOC \
-	-pragma-define:CRT_STACK_SIZE=512 \
+	-pragma-define:CRT_STACK_SIZE=$(STACK_SIZE) \
 	-DUSE_CPM2_SINGLE_SECTOR \
 	-Ca -DUSE_CPM2_SINGLE_SECTOR \
 	$(SOURCE) -lvlib -lsyslib \
@@ -78,7 +80,7 @@ vt100_ul.env: sysenv.bin vt100_ul.z3t
 # keyboard test files
 
 keytest.com: keytest.c Makefile
-	$(ZCC) +cpm -O3 -vn -DAMALLOC -pragma-define:CRT_STACK_SIZE=1024 -Wall \
+	$(ZCC) +cpm -O3 -vn -DAMALLOC -pragma-define:CRT_STACK_SIZE=$(STACK_SIZE) -Wall \
 	$< -o $@ -create-app
 
 bioskeyt.com: bioskeyt.asm Makefile

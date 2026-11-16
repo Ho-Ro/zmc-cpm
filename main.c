@@ -35,6 +35,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "internal_env.h"
 #include "zmc.h"
 
+#define VERSION "2.0-rc3"
+
 // the status of both panels
 AppState App;
 
@@ -57,6 +59,7 @@ uint8_t VLIB_STATUS = 0;
 uint8_t *cpbufpt = NULL;
 uint8_t cpbufsz = NUMBUF;
 
+uint8_t CPMversion = 0;
 
 int wait_key_bios( void ) {
     // use raw BIOS CONIO (fkt 3) to ignore XON/XOFF (^Q and ^S are used as fkt keys)
@@ -65,8 +68,8 @@ int wait_key_bios( void ) {
 
 
 int wait_key_bdos( void ) {
-    // use BDOS RAWIO to ignore XON/XOFF (^Q and ^S are used as fkt keys)
-    return bdos( 6, 0xFD ); // C_RAWIO, wait for char, returns A
+    // use BDOS DIRECT CONSOLE IO to ignore XON/XOFF (^Q and ^S are used as fkt keys)
+    return bdos( CPM_DCIO, 0xFD ); // C_RAWIO, wait for char, returns A
 }
 
 
@@ -188,9 +191,9 @@ const command_t commands[] = {
 
 
 int main( int argc, char **argv ) {
-    uint8_t cpmversion = bdos( 12, NULL );
+    CPMversion = bdos( CPM_VERS, NULL );
     // CP/M Plus has values for screen size in System Control Block
-    if ( cpmversion == 0x31 ) { // version == CP/M Plus
+    if ( CPMversion == 0x31 ) { // version == CP/M Plus
         // handle BDOS errors internally, do not exit
         bdos( 45, 0xFF );                       // set BDOS return error mode 1
         bdos( 109, 0x0A );                      // C_MODE, ignore ^C and ^S
@@ -202,7 +205,7 @@ int main( int argc, char **argv ) {
         LINES2 = LINES - 2;
     }
 
-    uint8_t entry_user = bdos( 32, 0xFF ); // CP/M user number at program start
+    uint8_t entry_user = bdos( CPM_SUID, 0xFF ); // CP/M user number at program start
 
     uint8_t **envptr = (void *)0x109;
 
@@ -216,7 +219,7 @@ int main( int argc, char **argv ) {
     MAX_FILES = largest / sizeof( FileEntry ) / 2 - 1;
 
     // Set current drive and user for both panels
-    char drive_left = bdos( 25, fcb_src ) + 'A'; // get current drive
+    char drive_left = bdos( CPM_IDRV, fcb_src ) + 'A'; // get current drive
     char drive_right = drive_left;
 
     // initialize both panels with entry_user and current drive (may be overridden by cmd line below)
@@ -276,7 +279,7 @@ int main( int argc, char **argv ) {
         } else if ( !strcmp( *argv, "--KEY" ) ) {
             // test for terminal function keys, exit with <ESC><ESC>
             uint8_t k;
-            printf( "CP/M version %02X: function key test - exit with <ESC><ESC>\n", cpmversion );
+            printf( "CP/M version %02X: function key test - exit with <ESC><ESC>\n", CPMversion );
             for ( ;; ) {
                 static uint8_t esc = 0;
                 k = wait_key_hw();
@@ -292,15 +295,14 @@ int main( int argc, char **argv ) {
                 esc = k == ESC; // remember <ESC>
             }
         } else if ( ( *argv[ 0 ] >= 'A' && *argv[ 0 ] <= 'P' ) ||
-                    ( *argv[ 0 ] >= 'a' && *argv[ 0 ] <= 'p' ) ||
                     ( *argv[ 0 ] >= '0' && *argv[ 0 ] <= '9' ) ) {
             // parse drive/user spec: "A", "3", "A3", "B4", "J12", "12J", etc.
             char drive = 0;
             uint8_t user = 255; // 255 = keep current
             char *p = *argv;
             while ( *p ) {
-                if ( ( *p >= 'A' && *p <= 'P' ) || ( *p >= 'a' && *p <= 'p' ) ) {
-                    char d = (*p >= 'a') ? (*p - 'a' + 'A') : *p;
+                if ( *p >= 'A' && *p <= 'P' ) {
+                    char d = *p;
                     if ( p[1] == ':' ) {
                         drive = d;
                         p += 2;
@@ -319,7 +321,7 @@ int main( int argc, char **argv ) {
                         user = u;
                     } else {
                         // letter followed by another letter is NOT a drive spec
-                        while ( *p && ( (*p >= 'A' && *p <= 'P') || (*p >= 'a' && *p <= 'p') ) )
+                        while ( *p && ( *p >= 'A' && *p <= 'P' ) )
                             p++;
                     }
                 } else if ( *p >= '0' && *p <= '9' ) {
@@ -330,8 +332,8 @@ int main( int argc, char **argv ) {
                         p++;
                     }
                     user = u;
-                } else if ( *p == ':' ) {
-                    p++;
+                // } else if ( *p == ':' ) {
+                //     p++;
                 } else {
                     p++;
                 }
@@ -407,7 +409,8 @@ int main( int argc, char **argv ) {
     if ( CONFIG ) {
         uint8_t *pcol;
         uint8_t *plin;
-        printf( "CP/M vers.: %02X\n", cpmversion );
+        printf( "V.%s %s %s\n",  VERSION, __DATE__, __TIME__ );
+        printf( "CP/M vers.: %02X\n", CPMversion );
         if ( *envptr ) {
             printf( "Z3  0x%04X\n", *envptr );
             pcol = (uint8_t*)( *envptr + ( &INTCOLUMNS - &INTENV ) );
@@ -424,7 +427,6 @@ int main( int argc, char **argv ) {
         }
         printf( "CP BUFFER:  %u\n", cpbufsz );
         printf( "MAX FILES:  %u\n", MAX_FILES );
-        printf( "Build %s %s\n",  __DATE__, __TIME__ );
         return 0;
     }
 
@@ -562,11 +564,6 @@ int main( int argc, char **argv ) {
                 cp = cmdline;
                 *cp = '\0';
             }
-        } else if ( k == '+' ) { // shortcut: + selects all files
-        } else if ( k == '+' ) { // shortcut: + selects all files
-            sel_cmd( "*" );
-        } else if ( k == '-' ) { // shortcut: - deselects all files
-            des_cmd( "*" );
         } else if ( k == TAB ) { // TAB: OTHER_PANEL
             change_focus();
         }
@@ -654,7 +651,7 @@ int main( int argc, char **argv ) {
             // active_panel/inactive_panel stay pointing to same screen positions,
             // but now display the other side's data
             // set BDOS user for active panel
-            bdos( 32, App.active_panel->user );
+            bdos( CPM_SUID, App.active_panel->user );
 
             // Redraw both panels completely with exchanged data
             cls();

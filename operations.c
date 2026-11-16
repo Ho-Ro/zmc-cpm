@@ -164,7 +164,7 @@ void load_directory( Panel *p ) {
         return;
     }
     // set user number for this panel
-    bdos( 32, p->user );
+    bdos( CPM_SUID, p->user );
 
     // Reset DMA to default!
     bdos( CPM_SDMA, DEF_DMA );
@@ -290,7 +290,7 @@ static int8_t delete_active_file() {
     Panel *p = App.active_panel;
     if ( p->num_files == 0 )
         return -1;
-    bdos( 32, p->user ); // set user number
+    bdos( CPM_SUID, p->user ); // set user number
     prepare_fcb( p->files[ p->current_idx ].cpmname, p, NULL );
     return bdos( CPM_DEL, fcb_src ); // BDOS function 19 (F_DELETE) - delete file
 }
@@ -315,7 +315,7 @@ void view_file() {
     curoff();
 
     // set user number for this panel
-    bdos( 32, p->user );
+    bdos( CPM_SUID, p->user );
 
     // Reset DMA to default!
     bdos( CPM_SDMA, DEF_DMA );
@@ -371,7 +371,7 @@ void dump_file() {
     curoff();
 
     // set user number for this panel
-    bdos( 32, p->user );
+    bdos( CPM_SUID, p->user );
 
     // Reset DMA to default!
     bdos( CPM_SDMA, DEF_DMA );
@@ -432,7 +432,7 @@ static int16_t copy_file_by_name( Panel *src, Panel *dst, const char *name ) {
     // set user numbers for cpsrcdst.asm (SRC for read, DST for write)
     cpsrc_src_user = src->user;
     cpsrc_dst_user = dst->user;
-    bdos( 32, src->user ); // set SRC user for read phase
+    bdos( CPM_SUID, src->user ); // set SRC user for read phase
 
     // overwrite confirmation: check if destination exists in dst panel's file list
     if ( dst ) {
@@ -551,7 +551,7 @@ static void exec_multi_delete( Panel *p ) {
                 gotoxy( STATUS_ROW << 8 | 1 );
                 ereol();
                 printf( " [%d/%d] Deleting: %s ", done, marked, p->files[ i ].cpmname );
-                bdos( 32, p->user ); // set user number
+                bdos( CPM_SUID, p->user ); // set user number
                 prepare_fcb( p->files[ i ].cpmname, p, NULL );
                 bdos( CPM_DEL, fcb_src ); // BDOS function 19 (F_DELETE) - delete file
                 p->files[ i ].attrib &= ~B_SEL;
@@ -602,7 +602,7 @@ void move_cmd() {
         printf( " MOVING: %s -> %c:", src->files[ src->current_idx ].cpmname, dst->drive );
         rc = copy_file_by_name( src, dst, src->files[ src->current_idx ].cpmname );
         if ( rc == 0 ) {
-            bdos( 32, src->user );
+            bdos( CPM_SUID, src->user );
             prepare_fcb( src->files[ src->current_idx ].cpmname, src, NULL );
             bdos( CPM_DEL, fcb_src );
         }
@@ -621,7 +621,7 @@ void move_cmd() {
                 printf( " MOVING [%d/%d]: %s", done, marked, src->files[ i ].cpmname );
                 rc = copy_file_by_name( src, dst, src->files[ i ].cpmname );
                 if ( rc == 0 ) {
-                    bdos( 32, src->user );
+                    bdos( CPM_SUID, src->user );
                     prepare_fcb( src->files[ i ].cpmname, src, NULL );
                     bdos( CPM_DEL, fcb_src );
                     src->files[ i ].attrib &= ~B_SEL;
@@ -703,7 +703,7 @@ void rename_cmd( const char *newname ) {
     }
 
     // prepare source and destination FCBs (space-padded, like prepare_fcb does)
-    bdos( 32, p->user ); // set user number
+    bdos( CPM_SUID, p->user ); // set user number
     prepare_fcb( oldname, p, NULL );   // fills fcb_src
     prepare_fcb( newname, NULL, p );   // fills fcb_dst
 
@@ -741,7 +741,7 @@ void dup_cmd( const char *newname ) {
         return; // nothing to do
 
     // prepare source and destination FCBs
-    bdos( 32, p->user ); // set user number for source
+    bdos( CPM_SUID, p->user ); // set user number for source
     prepare_fcb( oldname, p, NULL );   // fills fcb_src
     prepare_fcb( newname, NULL, p );   // fills fcb_dst
 
@@ -904,19 +904,51 @@ void change_drive_user( char d, uint8_t u ) {
 }
 
 
+// apply attribute changes to one file (CP/M 3 only, BDOS function 30)
+// set_mask/clr_mask: attribute bits to set / reset, the other bits stay as they are
+// the caller must have selected the panel's user number
+// returns 0 on success, 0xFF if the directory entry was not found
+static uint8_t set_file_attr( Panel *p, int idx, uint8_t set_mask, uint8_t clr_mask ) {
+    prepare_fcb( p->files[ idx ].cpmname, p, NULL );
+    // merge the current attributes with the requested changes
+    uint8_t new_attr = ( p->files[ idx ].attrib | set_mask ) & ~clr_mask & ~B_SEL;
+    // T1/T2/T3 (FCB offsets 9/10/11): the high bit is RO/SYS/ARCH,
+    // the low 7 bits are the file type characters and must be kept,
+    // otherwise the BDOS cannot match the directory entry
+    fcb_src[ 9] = ( fcb_src[ 9] & 0x7F ) | ( new_attr & B_RO   ? 0x80 : 0x00 );
+    fcb_src[10] = ( fcb_src[10] & 0x7F ) | ( new_attr & B_SYS  ? 0x80 : 0x00 );
+    fcb_src[11] = ( fcb_src[11] & 0x7F ) | ( new_attr & B_ARCH ? 0x80 : 0x00 );
+    if ( bdos( CPM_SETATTR, fcb_src ) == 0xFF ) // function 30, A = 0xFF: not found
+        return 0xFF;
+    // keep the in-memory entry in sync, no directory reload needed
+    p->files[ idx ].attrib = new_attr; // clears B_SEL
+    if ( is_on_panel( idx ) )
+        draw_file_line( p, idx );
+    return 0;
+}
+
+
 // set file attributes (CP/M 3 only, BDOS function 30)
 // usage: SET +S -A RO -R   (on active file or all selected files)
 //   +S / SYS  = set System     -S / DIR  = reset System
 //   +R / RO   = set Read-Only  -R / RW   = reset Read-Only
 //   +A        = set Archive    -A        = reset Archive
 void set_cmd() {
+    if ( CPMversion != 0x31 ) { // function 30 is "set R/O vector" in CP/M 2.2
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        printf( " SET: needs CP/M 3" );
+        wait_key_hw();
+        return;
+    }
+
     if ( !App.active_panel->num_files ) // nothing to do
         return;
 
     Panel *p = App.active_panel;
 
-    // parse the SET arguments (everything after "SET ")
-    char *arg = cmdline + 4; // skip "SET "
+    // parse the SET arguments (everything after "SET")
+    char *arg = cmdline + 3;
     while ( *arg == ' ' )
         arg++;
 
@@ -928,9 +960,7 @@ void set_cmd() {
         return;
     }
 
-    uint8_t set_sys = 0, clr_sys = 0;
-    uint8_t set_ro = 0, clr_ro = 0;
-    uint8_t set_arch = 0, clr_arch = 0;
+    uint8_t set_mask = 0, clr_mask = 0;
 
     while ( *arg ) {
         while ( *arg == ' ' )
@@ -945,17 +975,17 @@ void set_cmd() {
             *arg++ = '\0';
 
         if ( !strcmp( tok, "+S" ) || !strcmp( tok, "SYS" ) )
-            set_sys = 1;
+            set_mask |= B_SYS;
         else if ( !strcmp( tok, "-S" ) || !strcmp( tok, "DIR" ) )
-            clr_sys = 1;
+            clr_mask |= B_SYS;
         else if ( !strcmp( tok, "+R" ) || !strcmp( tok, "RO" ) )
-            set_ro = 1;
+            set_mask |= B_RO;
         else if ( !strcmp( tok, "-R" ) || !strcmp( tok, "RW" ) )
-            clr_ro = 1;
+            clr_mask |= B_RO;
         else if ( !strcmp( tok, "+A" ) )
-            set_arch = 1;
+            set_mask |= B_ARCH;
         else if ( !strcmp( tok, "-A" ) )
-            clr_arch = 1;
+            clr_mask |= B_ARCH;
         else {
             gotoxy( STATUS_ROW << 8 | 1 );
             ereol();
@@ -965,84 +995,43 @@ void set_cmd() {
         }
     }
 
+    // with a selection all marked files are changed, otherwise only the current one
     int i, marked = 0, done = 0;
     for ( i = 0; i < p->num_files; i++ )
         if ( p->files[ i ].attrib & B_SEL )
             ++marked;
 
-    if ( marked == 0 ) {
-        // no selection: set attribute on current file
+    if ( marked ) {
         gotoxy( STATUS_ROW << 8 | 1 );
         ereol();
-        printf( " SET: %s", p->files[ p->current_idx ].cpmname );
-        bdos( 32, p->user );
-        prepare_fcb( p->files[ p->current_idx ].cpmname, p, NULL );
-        // apply attribute changes to FCB type bytes (T1,T2,T3 at offsets 9,10,11)
-        if ( set_sys )  fcb_src[10] |= 0x80;
-        if ( clr_sys )  fcb_src[10] &= 0x7F;
-        if ( set_ro )   fcb_src[9]  |= 0x80;
-        if ( clr_ro )   fcb_src[9]  &= 0x7F;
-        if ( set_arch ) fcb_src[11] |= 0x80;
-        if ( clr_arch ) fcb_src[11] &= 0x7F;
-        uint8_t rc = bdos( CPM_SETATTR, fcb_src ); // BDOS function 30
-        if ( rc == 0xFF ) {
-            gotoxy( STATUS_ROW << 8 | 1 );
-            ereol();
-            printf( " - file not found" );
-            wait_key_hw();
-        } else {
-            // update in-memory attribute, no directory reload needed
-            if ( set_sys )  p->files[ p->current_idx ].attrib |= B_SYS;
-            if ( clr_sys )  p->files[ p->current_idx ].attrib &= ~B_SYS;
-            if ( set_ro )   p->files[ p->current_idx ].attrib |= B_RO;
-            if ( clr_ro )   p->files[ p->current_idx ].attrib &= ~B_RO;
-            if ( set_arch ) p->files[ p->current_idx ].attrib |= B_ARCH;
-            if ( clr_arch ) p->files[ p->current_idx ].attrib &= ~B_ARCH;
-            if ( is_on_panel( p->current_idx ) )
-                draw_file_line( p, p->current_idx );
-        }
-    } else {
-        gotoxy( STATUS_ROW << 8 | 1 );
-        ereol();
-        printf( " SET ATTR SELECTED FILE(S)? (N/y) ");
+        printf( " SET ATTR SELECTED FILE(S)? (N/y) " );
         if ( !yes_no() )
             return;
+    }
 
-        for ( i = 0; i < p->num_files; i++ ) {
-            if ( p->files[ i ].attrib & B_SEL ) {
-                ++done;
-                gotoxy( STATUS_ROW << 8 | 1 );
-                ereol();
-                printf( " SET [%d/%d]: %s", done, marked, p->files[ i ].cpmname );
-                bdos( 32, p->user );
-                prepare_fcb( p->files[ i ].cpmname, p, NULL );
-                if ( set_sys )  fcb_src[10] |= 0x80;
-                if ( clr_sys )  fcb_src[10] &= 0x7F;
-                if ( set_ro )   fcb_src[9]  |= 0x80;
-                if ( clr_ro )   fcb_src[9]  &= 0x7F;
-                if ( set_arch ) fcb_src[11] |= 0x80;
-                if ( clr_arch ) fcb_src[11] &= 0x7F;
-                uint8_t rc = bdos( CPM_SETATTR, fcb_src );
-                if ( rc == 0xFF ) {
-                    gotoxy( STATUS_ROW << 8 | 1 );
-                    ereol();
-                    printf( " - file not found: %s", p->files[ i ].cpmname );
-                    wait_key_hw();
-                } else {
-                    // update in-memory attribute, no directory reload needed
-                    if ( set_sys )  p->files[ i ].attrib |= B_SYS;
-                    if ( clr_sys )  p->files[ i ].attrib &= ~B_SYS;
-                    if ( set_ro )   p->files[ i ].attrib |= B_RO;
-                    if ( clr_ro )   p->files[ i ].attrib &= ~B_RO;
-                    if ( set_arch ) p->files[ i ].attrib |= B_ARCH;
-                    if ( clr_arch ) p->files[ i ].attrib &= ~B_ARCH;
-                    p->files[ i ].attrib &= ~B_SEL;
-                    if ( is_on_panel( i ) )
-                        draw_file_line( p, i );
-                }
-            }
+    bdos( CPM_SUID, p->user ); // the BDOS user is global, select this panel's one
+
+    for ( i = 0; i < p->num_files; i++ ) {
+        if ( marked ) {
+            if ( !( p->files[ i ].attrib & B_SEL ) )
+                continue;
+        } else if ( i != p->current_idx ) {
+            continue;
+        }
+
+        gotoxy( STATUS_ROW << 8 | 1 );
+        ereol();
+        if ( marked )
+            printf( " SET [%d/%d]: %s", ++done, marked, p->files[ i ].cpmname );
+        else
+            printf( " SET: %s", p->files[ i ].cpmname );
+
+        if ( set_file_attr( p, i, set_mask, clr_mask ) == 0xFF ) {
+            printf( " - file not found" );
+            wait_key_hw();
         }
     }
+
     gotoxy( STATUS_ROW << 8 | 1 );
     ereol(); // clear status line
 }

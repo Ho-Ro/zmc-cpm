@@ -23,7 +23,7 @@ specifically designed for CP/M systems based on Z80 processors.
 - Z3 DSLIB & SYSLIB ready: Z80 optimised functions for directory access can replace C code.
 - Loadable environment file for non-Z3 systems.
 
-## WHAT'S NEW IN V2.0-rc2 (The Ho-Ro Update)
+## WHAT'S NEW IN V2.0-rc3 (The Ho-Ro Update)
 - Handle `USER` for the panels:
   - Open panels on start: `zmc i 1j` opens panels I: (left) and 1J: (right).
   - Change active panel drive/user from cmd line with e.g. K:, 1:, 1K: or K1: terminated by <CR>.

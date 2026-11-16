@@ -43,7 +43,8 @@ uint8_t parse_function_keys( uint8_t k ) {
             first_file();
         } else if ( k == 'F' ) { // <END> = "<ESC>[F"
             last_file();
-        } else if ( k == '1' ) { // F5 = "<ESC>[15~" / F6 = "<ESC>[17~" / F8 = "<ESC>[19~"
+        } else if ( k == '1' ) {
+            // F5 = "<ESC>[15~" / F6 = "<ESC>[17~" (!) / F8 = "<ESC>[19~" (!)
             k = wait_key_hw();
             if ( ( k == '5' || k == '6' ) && wait_key_hw() == '~' ) {
                 // F5 = "<ESC>[15~" COPY (HACK: minicom sends "<ESC>[16~")
@@ -83,7 +84,7 @@ uint8_t parse_function_keys( uint8_t k ) {
             move_cmd();
         } else if ( k == 'W' ) { // F8 = "<ESC>OW" DELETE
             delete_cmd();
-        } else if ( k == 'Y' ) { // F10 = "<ESC>OY" DUMP
+        } else if ( k == 'Y' ) { // F10 = "<ESC>OY" EXIT
             loop = 0;            // ready, leave loop
         }
     } // now the VT52 cursor keys and F1, F3, F4

@@ -54,6 +54,7 @@ EXTERN      _cpbufpt
 EXTERN      _cpbufsz
 EXTERN      _cpsrc_src_user
 EXTERN      _cpsrc_dst_user
+EXTERN      _CPMversion
 
 DEFC    sfcbcr  = _fcb_src+32   ;current read record
 DEFC    sfcbce  = _fcb_src+12   ;current read extend
@@ -117,12 +118,11 @@ ifndef  USE_CPM2_SINGLE_SECTOR
 ;   use multi sector rd/wr for CP/M 3
 ;   use single sector rd/wr otherwise
 ;
-    ld      c,CPM_VERS
-    call    BDOS
+    ld      a,(_CPMversion) ; version, read once by main()
     cp      31h             ; CP/M3?
     jp      z,copy_loop_3   ; yes
 
-else
+endif
 
 ;   COPY LOOP for CP/M 2.2 (SINGLE SECTOR)
 ;   source file open, dest file open
@@ -196,16 +196,18 @@ write_start_2:
 write_loop_2:
     call    setdma
 
+    ; count down the records still to write before touching the user number,
+    ; so the jump back to the read loop keeps the SOURCE user selected
+    ld      a,(rdsek)
+    dec     a
+    ld      (rdsek),a
+    jr      z,copy_loop_2   ;reached end of file before end of buffers
+
     ; switch to destination user for write
     ld      hl,_cpsrc_dst_user
     ld      e,(hl)
     ld      c,CPM_SUID
     call    BDOS
-
-    ld      a,(rdsek)
-    dec     a
-    ld      (rdsek),a
-    jr      z,copy_loop_2   ;reached end of file before end of buffers
 
     ld      de,_fcb_dst     ;destination
     ld      c,CPM_WRIT
@@ -240,14 +242,11 @@ write_loop_2:
 
     jr      write_loop_2    ;loop until buffer
 
-endif
-
 ; common exit routines for CP/M 2.2 and CP/M 3
 copy_done:
     ; Reset multi-sector count to 1 on CP/M 3 so subsequent single-sector
     ; BDOS reads/writes (e.g. dump_file) don't overflow the DMA buffer.
-    ld      c,CPM_VERS
-    call    BDOS
+    ld      a,(_CPMversion) ; version, read once by main()
     cp      31h             ; CP/M 3?
     jr      nz,copy_done_skip_ms_reset  ; no -> skip
     ld      e,1             ; reset multi-sector count to 1
