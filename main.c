@@ -42,7 +42,9 @@ AppState App;
 
 char cmdline[ CMDLINELEN + 1 ];
 
-#define NUMBUF 64
+#ifndef NUMBUF
+#define NUMBUF 32
+#endif
 
 uint8_t DEBUG = 0; // increase with "zmc --debug", can be used to enable messages etc.
 uint8_t DEVEL = 0; // increase with "zmc --devel", can be used to enable new features
@@ -294,6 +296,8 @@ int main( int argc, char **argv ) {
                     return 0;
                 esc = k == ESC; // remember <ESC>
             }
+        } else if ( !strcmp( *argv, "--CPM2" ) ) { // TEST: fake CP/M 2.2 for copy
+            CPMversion = 0x20;
         } else if ( ( *argv[ 0 ] >= 'A' && *argv[ 0 ] <= 'P' ) ||
                     ( *argv[ 0 ] >= '0' && *argv[ 0 ] <= '9' ) ) {
             // parse drive/user spec: "A", "3", "A3", "B4", "J12", "12J", etc.
@@ -541,14 +545,14 @@ int main( int argc, char **argv ) {
                             newname++;
                         if ( *newname )
                             dup_cmd( newname );
-                    } else if ( !strncmp( cmdline, "SEL", 3 ) || cmdline[0] == '+' ) {
-                        char *pat = ( cmdline[0] == '+' ) ? cmdline + 1 : cmdline + 3;
+                    } else if ( !strncmp( cmdline, "SEL ", 4 ) || cmdline[0] == '+' ) {
+                        char *pat = ( cmdline[0] == '+' ) ? cmdline + 1 : cmdline + 4;
                         while ( *pat == ' ' )
                             pat++;
                         if ( *pat )
                             sel_cmd( pat );
-                    } else if ( !strncmp( cmdline, "DES", 3 ) || cmdline[0] == '-' ) {
-                        char *pat = ( cmdline[0] == '-' ) ? cmdline + 1 : cmdline + 3;
+                    } else if ( !strncmp( cmdline, "DES ", 4 ) || cmdline[0] == '-' ) {
+                        char *pat = ( cmdline[0] == '-' ) ? cmdline + 1 : cmdline + 4;
                         while ( *pat == ' ' )
                             pat++;
                         if ( *pat )

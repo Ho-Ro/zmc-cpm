@@ -317,8 +317,7 @@ ifndef USE_CPM2_SINGLE_SECTOR
 set_single:
     ld      e,1             ;single sector count
     ld      c,CPM_MULT
-    call    BDOS
-    ret
+    jp      BDOS
 
 ;   COPY LOOP for CP/M 3 (MULTI SECTOR)
 ;   source file open, dest file open

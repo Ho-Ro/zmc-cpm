@@ -38,7 +38,6 @@ specifically designed for CP/M systems based on Z80 processors.
 - `^U` (Ctrl U) exchanges left and right panel (Midnight Commander style).
 - Fixed: CP/M 3 multi-sector copy (buffer overflow, exact-multiple truncation, false "directory full").
 - Fixed: DMA pointer corruption in copy engine.
-- `zmctest.com` is the fallback test version that uses the slow single sector read/write for copy.
 
 ## TERMINAL ADAPTION
 By calling the program with `ZMC --TCAP [TCAPFILE]`, you can load the a 128 byte TCAP file
@@ -113,14 +112,16 @@ Calling the program with command line argument as `ZMC --CONFIG` shows system
 information and the value and file position of the screen size constants:
 
 ```
-CP/M version: 22
-COLUMNS @ 0x59B3: 80
-LINES @ 0x59B4: 24
-COPY BUFFER: 64
-MAX_FILES: 699
+V.2.0-rc3 Nov 18 2026 15:57:49
+CP/M vers.: 22
+ENV 0x7F00
+COL 0x7F31: 80
+ROW 0x7F32: 24
+CP BUFFER:  32
+MAX FILES:  585
 ```
 
-The byte values `_COLUMNS` at `0x59B3` and `_LINES` at `0x59B4` are defined
+The byte values `_INTCOLUMNS:` at `0x7F31` and `_INTLINES` at `0x7F32` are defined
 in `SYSENV.ASM` and can be adjusted to your requirements with a hex editor.
 
 Calling as `ZMC --KEY` supports the function key handling, the program simply
@@ -150,7 +151,8 @@ CP/M version 22: function key test - exit with <ESC><ESC>
 ```
 
 ## INSPIRATION & CREDITS
-ZMC is a tribute to the legendary Norton Commander and Peter Norton.
+ZMC is a tribute to the legendary Norton Commander and Peter Norton.  
+Some key functions are inspired by the GNU Midnight Commander.
 
 CONTRIBUTORS:
 - Volney Torres: Original creator, UI design, and panel logic.
