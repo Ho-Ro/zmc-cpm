@@ -122,22 +122,17 @@ static void days_to_date( void *date ) {
 // Three-way compare function for the name field of FileEntry used by qsort
 static int fileNameExtentCompare( const void *a, const void *b ) {
     // 1. compare cpmname
-    // 2. if equal, compare extent and mark files with lower extent as invalid
-    int res = strcmp( ( (const FileEntry *)a )->cpmname, ( (const FileEntry *)b )->cpmname );
+    // 2. if equal, compare extent
+    // The comparison must not modify the entries: qsort is free to compare
+    // any pair, any number of times, so side effects make the result depend
+    // on the comparison order (and corrupt the sort itself). The extents of
+    // one file are merged afterwards, in load_directory().
+    const FileEntry *fa = (const FileEntry *)a;
+    const FileEntry *fb = (const FileEntry *)b;
+    int res = strcmp( fa->cpmname, fb->cpmname );
     if ( res ) // names are different
         return res;
-    // only the 1st extent has date/time info
-    if ( ( (const FileEntry *)a )->date && !( (const FileEntry *)b )->date )
-        memcpy( &( (FileEntry *)b )->date, &( (const FileEntry *)a )->date, 6 );
-    else if ( ( (const FileEntry *)b )->date && !( (const FileEntry *)a )->date )
-        memcpy( &( (FileEntry *)a )->date, &( (const FileEntry *)b )->date, 6 );
-    // now compare the extents
-    res = ( (const FileEntry *)a )->extent - ( (const FileEntry *)b )->extent;
-    if ( res < 0 )
-        *( (FileEntry *)a )->cpmname = '~';
-    else
-        *( (FileEntry *)b )->cpmname = '~';
-    return res;
+    return (int)fa->extent - (int)fb->extent;
 }
 
 
@@ -240,31 +235,36 @@ void load_directory( Panel *p ) {
         result = bdos( CPM_FNXT, fcb_src ); // BDOS function 18 (F_SNEXT) - search for next
     }
 
-    // sort file names and extents,
-    // mark all extents except the last one
-    // move (most of) the marked extents to the end of list
-
+    // sort by name, then by extent
     qsort( (void *)p->files, count, sizeof( FileEntry ), fileNameExtentCompare );
 
-    uint16_t f_idx;
-
-    // remove all marked extents at the end of the array
-    f_idx = count;
-    while ( f_idx-- && *( p->files[ f_idx ].cpmname ) == '~' )
-        --count;
-
-    // remove marked extents within the array, copy array one up
-    FileEntry *it = p->files;
-    FileEntry *end = &p->files[ count ];
-    while ( it < end ) {
-        while ( *( (char *)it->cpmname ) == '~' ) {
-            memcpy( it, it + 1, ( end - it - 1 ) * sizeof( FileEntry ) );
-            --count;
-            --end;
+    // CP/M uses one directory entry for every 16K of a file. They are
+    // adjacent now: keep the one with the highest extent (it carries the
+    // total record count) and fold the others into it.
+    uint16_t kept = 0;
+    for ( uint16_t f_idx = 0; f_idx < count; ++f_idx ) {
+        FileEntry *cur = &p->files[ f_idx ];
+        if ( kept && !strcmp( p->files[ kept - 1 ].cpmname, cur->cpmname ) ) {
+            FileEntry *keep = &p->files[ kept - 1 ];
+            keep->attrib |= cur->attrib;
+            if ( !keep->date && cur->date ) { // date/time exists for the 1st extent only
+                keep->date = cur->date;
+                keep->month = cur->month;
+                keep->day = cur->day;
+                keep->hour = cur->hour;
+                keep->minute = cur->minute;
+            }
+            if ( cur->extent > keep->extent ) {
+                keep->extent = cur->extent;
+                keep->rc = cur->rc;
+            }
+        } else {
+            p->files[ kept++ ] = *cur;
         }
-        ++it;
     }
+    count = kept;
 
+    // extent -> total number of records: 128 per full extent + the last one
     for ( uint16_t f_idx = 0; f_idx < count; ++f_idx )
         p->files[ f_idx ].extent = ( ( p->files[ f_idx ].extent << 7 ) + p->files[ f_idx ].rc );
 
@@ -887,8 +887,10 @@ static void set_panel_drive_user( Panel *p, char drive, uint8_t user ) {
     p->drive = drive;
     p->user = user;
     load_directory( p );
+    // header first, then the new content - and only once: refresh_ui() would
+    // call fill_panel() a second time, which showed as clear+redraw flicker
+    draw_header( p );
     fill_panel( p );
-    refresh_ui( PAN_ACTIVE );
 }
 
 void change_drive( char k ) {

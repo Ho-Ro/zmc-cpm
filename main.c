@@ -35,7 +35,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 #include "internal_env.h"
 #include "zmc.h"
 
-#define VERSION "2.0-rc3"
+
+// build info string for --CONFIG: INFOTEXT (at build time) or DATE TIME
+#define STR(x)  #x
+#define STR2(x) STR(x)
+#ifdef INFOTEXT
+#define BUILD_INFO  STR2(INFOTEXT)
+#else
+#define BUILD_INFO  __DATE__ " " __TIME__
+#endif
+
 
 // the status of both panels
 AppState App;
@@ -45,6 +54,16 @@ char cmdline[ CMDLINELEN + 1 ];
 #ifndef NUMBUF
 #define NUMBUF 32
 #endif
+
+// plausible screen sizes the CP/M 3 SCB can report; anything outside this
+// range is treated as garbage (some systems answer 255, which +1 makes 256)
+// and replaced by a standard 80x25 screen
+#define SCB_MIN_COLUMNS 40
+#define SCB_MAX_COLUMNS 200
+#define SCB_MIN_LINES 10
+#define SCB_MAX_LINES 100
+#define SCB_DEF_COLUMNS 80
+#define SCB_DEF_LINES 25
 
 uint8_t DEBUG = 0; // increase with "zmc --debug", can be used to enable messages etc.
 uint8_t DEVEL = 0; // increase with "zmc --devel", can be used to enable new features
@@ -201,9 +220,11 @@ int main( int argc, char **argv ) {
         bdos( 109, 0x0A );                      // C_MODE, ignore ^C and ^S
         wait_key_hw = &wait_key_bdos;           // use BDOS RAWIO instead of BIOS CONIO
         uint8_t scbpb[ 4 ] = { 0x1A, 0, 0, 0 }; // SCB parameter block, get col - 1
-        COLUMNS = bdos( 49, scbpb ) + 1;
+        int value = bdos( 49, scbpb ) + 1;      // int on purpose: 255 + 1 = 256
+        COLUMNS = ( value >= SCB_MIN_COLUMNS && value <= SCB_MAX_COLUMNS ) ? (uint8_t)value : SCB_DEF_COLUMNS;
         scbpb[ 0 ] = 0x1C; // lines - 1
-        LINES = bdos( 49, scbpb ) + 1;
+        value = bdos( 49, scbpb ) + 1;
+        LINES = ( value >= SCB_MIN_LINES && value <= SCB_MAX_LINES ) ? (uint8_t)value : SCB_DEF_LINES;
         LINES2 = LINES - 2;
     }
 
@@ -325,7 +346,7 @@ int main( int argc, char **argv ) {
                         user = u;
                     } else {
                         // letter followed by another letter is NOT a drive spec
-                        while ( *p && ( *p >= 'A' && *p <= 'P' ) )
+                        while ( *p && *p >= 'A' && *p <= 'P' )
                             p++;
                     }
                 } else if ( *p >= '0' && *p <= '9' ) {
@@ -413,7 +434,7 @@ int main( int argc, char **argv ) {
     if ( CONFIG ) {
         uint8_t *pcol;
         uint8_t *plin;
-        printf( "V.%s %s %s\n",  VERSION, __DATE__, __TIME__ );
+        puts( BUILD_INFO );
         printf( "CP/M vers.: %02X\n", CPMversion );
         if ( *envptr ) {
             printf( "Z3  0x%04X\n", *envptr );
@@ -491,8 +512,8 @@ int main( int argc, char **argv ) {
                     // parse: "A:" .. "P:", "3:" .. "9:", "A3:" .. "P9:", "J12:", "12J:"
                     // ':' terminates the drive/user spec
                     while ( *p ) {
-                        if ( ( *p >= 'A' && *p <= 'P' ) || ( *p >= 'a' && *p <= 'p' ) ) {
-                            char d = (*p >= 'a') ? (*p - 'a' + 'A') : *p;
+                        if ( *p >= 'A' && *p <= 'P' ) {
+                            char d = *p;
                             if ( p[1] == ':' ) {
                                 cdrive = d;
                                 p += 2;
@@ -509,7 +530,7 @@ int main( int argc, char **argv ) {
                                 cuser = u;
                             } else {
                                 // letter NOT followed by ':' or digit → skip whole word
-                                while ( *p && ( (*p >= 'A' && *p <= 'P') || (*p >= 'a' && *p <= 'p') ) )
+                                while ( *p && *p >= 'A' && *p <= 'P' )
                                     p++;
                             }
                         } else if ( *p >= '0' && *p <= '9' ) {
@@ -527,9 +548,13 @@ int main( int argc, char **argv ) {
                         }
                     }
 
-                    if ( cdrive )
+                    // drive and user in one step: a single directory load and
+                    // a single redraw instead of two (B: then 5:)
+                    if ( cdrive && cuser != 255 )
+                        change_drive_user( cdrive, cuser );
+                    else if ( cdrive )
                         change_drive( cdrive );
-                    if ( cuser != 255 )
+                    else if ( cuser != 255 )
                         change_user( cuser );
                 } else {
                     // Line does not end with ':' → try commands

@@ -11,6 +11,8 @@ KEYTEST = keytest.com bioskeyt.com
 ZCC = zcc
 ZASM = zasm
 
+INFOTEXT ?= 2.0-rc4
+
 # force a build when the default stack size is overruled via environment
 ifdef ZMC_STACK_SIZE
 	FORCE_ZMC := FORCE_BUILD
@@ -24,6 +26,13 @@ ifdef ZMC_NUMBUF
 	FORCE_ZMC := FORCE_BUILD
 endif
 
+# optional build-time INFO text for --CONFIG output (replaces VERSION DATE TIME)
+# Spaces in INFOTEXT are replaced by '_' so the -D argument is space-free
+ifdef INFOTEXT
+	INFOTEXT_DEF := $(shell echo "$(INFOTEXT)" | tr ' ' '_')
+	DEFINE_INFOTEXT := -DINFOTEXT=$(INFOTEXT_DEF)
+endif
+
 .PHONY: all
 all: $(ZMC) $(KEYTEST) $(TCAP) $(ENV)
 
@@ -35,7 +44,7 @@ all: $(ZMC) $(KEYTEST) $(TCAP) $(ENV)
 
 # the complete build is more compact (~ -500 byte) than the modular build
 $(ZMC): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile $(FORCE_ZMC)
-	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall $(DEFINE_NUMBUF) \
+	$(ZCC) +cpm -O3 -crt0=z3_crt0.asm -vn -Wall $(DEFINE_NUMBUF) $(DEFINE_INFOTEXT) \
 	-pragma-output:noprotectmsdos \
 	-pragma-output:noredir -DAMALLOC \
 	-pragma-define:CRT_STACK_SIZE=$(ZMC_STACK_SIZE) \
@@ -47,11 +56,6 @@ $(ZMC): $(SOURCE) $(HEADER) $(ENVSRC) $(CRT) Makefile $(FORCE_ZMC)
 # helper to force a new build
 .PHONY: FORCE_BUILD
 FORCE_BUILD:
-
-# unconditional rebuild (fakes a stack size overrule)
-.PHONY: rebuild
-rebuild:
-	$(MAKE) ZMC_STACK_SIZE=$(ZMC_STACK_SIZE)
 
 
 # the TCAP files
